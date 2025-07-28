@@ -2,9 +2,30 @@
 const TelegramBot = require("node-telegram-bot-api");
 const { pool } = require("./db");
 require("dotenv").config();
+require('./server');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { webHook: { port: 443 } });
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
+
+// ====== CONFIGURATION ENV ======
+const port = process.env.PORT || 3000;
+const token = process.env.TELEGRAM_TOKEN;
+if (!token) throw new Error("❌ TELEGRAM_TOKEN non défini !");
+const baseUrl = process.env.BASE_URL; // ✅ ✅ ✅ à utiliser sur Render !
+if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
+
+// ====== GESTION DES ÉTATS ======
+const userStates = {};
+const ADMIN_IDS = [6248838967];
+const fixedDeletionConfirmations = new Map();
+const editFixedStates = {};
+const userLang = {};
+const fixedAddStates = {};
+const fixedEditStates = {};
+const editStates = {};
+
+const adminId = process.env.TELEGRAM_ADMIN_ID;
+const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
 // Active le webhook (à appeler une seule fois manuellement)
 bot.setWebHook(`${process.env.BASE_URL}/webhook/${process.env.BOT_TOKEN}`);
