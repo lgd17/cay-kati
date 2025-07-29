@@ -1,16 +1,11 @@
 
-const TelegramBot = require("node-telegram-bot-api");
 const schedule = require('node-schedule');
 const { pool } = require("./db");
-require("dotenv").config();
 const bot = require("./bot");
+require("./server");
 
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { webHook: true });
-module.exports = bot; //
  
-// Active le webhook (à appeler une seule fois manuellement)
-bot.setWebHook(`${process.env.BASE_URL}/webhook/${process.env.TELEGRAM_TOKEN}`);
 
 
 // ====== CONFIGURATION ENV ======
