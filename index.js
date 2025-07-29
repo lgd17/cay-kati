@@ -3,7 +3,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const schedule = require('node-schedule');
 const { pool } = require("./db");
 require("dotenv").config();
-require('./server');
+const bot = require("./bot");
 
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { webHook: true });
