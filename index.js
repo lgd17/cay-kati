@@ -1,5 +1,6 @@
 
 const TelegramBot = require("node-telegram-bot-api");
+const schedule = require('node-schedule');
 const { pool } = require("./db");
 require("dotenv").config();
 require('./server');
