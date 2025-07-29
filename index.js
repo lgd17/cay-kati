@@ -15,7 +15,7 @@ const baseUrl = process.env.BASE_URL; // ✅ ✅ ✅ à utiliser sur Render !
 if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
 
 // ====== GESTION DES ÉTATS ======
-const userStates = {};
+
 const fixedDeletionConfirmations = new Map();
 const editFixedStates = {};
 const userLang = {};
