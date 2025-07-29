@@ -15,8 +15,8 @@ async function sendScheduledMessages() {
 
   try {
     const res = await pool.query(
-      "SELECT * FROM message_fixe WHERE send_time = $1",
-      [currentTime]
+     "SELECT * FROM message_fixes WHERE heures = $1",
+  [heure]
     );
 
     for (const msg of res.rows) {
