@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const bot = require('./index'); // si tu veux le bot pour usage dans d'autres routes
+const bot = require("./bot"); 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
