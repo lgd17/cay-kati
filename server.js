@@ -11,7 +11,7 @@ app.get("/", (req, res) => {
 });
 
 // Route du webhook
-app.post(`/webhook/${process.env.BOT_TOKEN}`, (req, res) => {
+app.post(`/webhook/${process.env.TELEGRAM_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
