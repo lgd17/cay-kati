@@ -20,3 +20,24 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Serveur webhook lancé sur le port ${PORT}`);
 });
+
+
+/////////////////////////////////////////////////////////////////////////////
+
+
+app.get('/ping', async (req, res) => {
+  try {
+    const adminId = process.env.ADMIN_ID || 'TON_TELEGRAM_ID';
+
+    await bot.sendMessage(adminId, `🟢 Ping reçu à ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })}`);
+
+    res.send("✅ Ping reçu et message envoyé.");
+  } catch (error) {
+    console.error("Erreur lors du ping :", error);
+    res.status(500).send("❌ Erreur lors de l'envoi du message.");
+  }
+});
+
+
+
+
