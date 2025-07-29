@@ -1,23 +1,22 @@
-require("dotenv").config();
-const express = require("express");
-const bot = require("./index");
+require('dotenv').config();
+const express = require('express');
+const bot = require('./index'); // si tu veux le bot pour usage dans d'autres routes
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Pour Telegram
 app.use(express.json());
-
-// Route test
-app.get("/", (req, res) => {
-  res.send("✅ Bot de validation en ligne !");
-});
-
-// Route du webhook
 app.post(`/webhook/${process.env.TELEGRAM_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// Lancement serveur
-const PORT = process.env.PORT || 4000;
+// Test route
+app.get('/', (req, res) => {
+  res.send('✅ Serveur du bot en ligne via webhook');
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+  console.log(`🚀 Serveur webhook lancé sur le port ${PORT}`);
 });
