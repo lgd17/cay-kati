@@ -6,7 +6,7 @@ require("dotenv").config();
 require('./server');
 
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
-const bot = new TelegramBot(process.env.BOT_TOKEN);
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
 module.exports = bot; // 
 
 
