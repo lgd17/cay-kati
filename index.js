@@ -17,7 +17,6 @@ if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
 // ====== GESTION DES ÉTATS ======
 const pendingCustomRejects = {};
 const userStates = {}; 
-const userStates = {}; 
 const fixedDeletionConfirmations = new Map();
 const editFixedStates = {};
 const userLang = {};
