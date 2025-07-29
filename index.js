@@ -5,8 +5,10 @@ const { pool } = require("./db");
 require("dotenv").config();
 require('./server');
 
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { webHook: { port: 3000} });
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
+const bot = new TelegramBot(process.env.BOT_TOKEN);
+module.exports = bot; // 
+
 
 // ====== CONFIGURATION ENV ======
 const port = process.env.PORT || 3000;
