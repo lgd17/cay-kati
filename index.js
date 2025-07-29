@@ -16,7 +16,6 @@ if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
 
 // ====== GESTION DES ÉTATS ======
 const userStates = {};
-const ADMIN_IDS = [6248838967];
 const fixedDeletionConfirmations = new Map();
 const editFixedStates = {};
 const userLang = {};
