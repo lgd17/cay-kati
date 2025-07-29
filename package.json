@@ -2,7 +2,7 @@
   "name": "telegram-admin-bot",
   "version": "1.0.0",
   "description": "Bot Telegram d'administration",
-  "type": "module",
+  "type": "commonjs",
   "engines": {
     "node": ">=20.0.0"
   },
