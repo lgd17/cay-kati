@@ -15,7 +15,9 @@ const baseUrl = process.env.BASE_URL; // ✅ ✅ ✅ à utiliser sur Render !
 if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
 
 // ====== GESTION DES ÉTATS ======
-
+const pendingCustomRejects = {};
+const userStates = {}; 
+const userStates = {}; 
 const fixedDeletionConfirmations = new Map();
 const editFixedStates = {};
 const userLang = {};
@@ -29,8 +31,7 @@ const channelId = process.env.TELEGRAM_CHANNEL_ID;
 // Active le webhook (à appeler une seule fois manuellement)
 bot.setWebHook(`${process.env.BASE_URL}/webhook/${process.env.BOT_TOKEN}`);
 
-const pendingCustomRejects = {};
-const userStates = {}; 
+
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 // === MENU ADMIN AVEC BOUTON INLINE ===
@@ -691,8 +692,6 @@ bot.onText(/\/admin/, async (msg) => {
     console.error("Erreur /admin:", err);
   }
 });
-
-const pendingCustomRejects = {}; // Pour stocker les ID en attente de motif personnalisé
 
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
