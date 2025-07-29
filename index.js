@@ -6,8 +6,11 @@ require("dotenv").config();
 require('./server');
 
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
-module.exports = bot; // 
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { webHook: true });
+module.exports = bot; //
+ 
+// Active le webhook (à appeler une seule fois manuellement)
+bot.setWebHook(`${process.env.BASE_URL}/webhook/${process.env.TELEGRAM_TOKEN}`);
 
 
 // ====== CONFIGURATION ENV ======
@@ -29,10 +32,6 @@ const editStates = {};
 
 const adminId = process.env.TELEGRAM_ADMIN_ID;
 const channelId = process.env.TELEGRAM_CHANNEL_ID;
-
-// Active le webhook (à appeler une seule fois manuellement)
-bot.setWebHook(`${process.env.BASE_URL}/webhook/${process.env.BOT_TOKEN}`);
-
 
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
