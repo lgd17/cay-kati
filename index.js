@@ -3,6 +3,8 @@ const schedule = require('node-schedule');
 const { pool } = require("./db");
 const bot = require("./bot");
 require("./server");
+require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
+
 
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
  
