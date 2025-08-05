@@ -29,7 +29,15 @@ app.get('/ping', async (req, res) => {
   try {
     const adminId = process.env.ADMIN_ID || 'TON_TELEGRAM_ID';
 
-    await bot.sendMessage(adminId, `🟢 Ping reçu à ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })}`);
+    await bot.sendMessage(adminId, `🟢 Ping reçu à ${new Date().toLocaleString('fr-FR', {
+  timeZone: 'Africa/Lome',
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+})}`);
 
     res.send("✅ Ping reçu et message envoyé.");
   } catch (error) {
