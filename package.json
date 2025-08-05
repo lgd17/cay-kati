@@ -3,19 +3,22 @@
   "version": "1.0.0",
   "description": "Bot Telegram d'administration",
   "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "messages": "node sendFixedMessages.js"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
+    "dayjs": "^1.11.10",
     "dotenv": "^16.4.0",
     "express": "^4.19.2",
-    "node-telegram-bot-api": "^0.61.0",
-    "pg": "^8.11.1",
+    "moment-timezone": "^0.5.40",
     "node-cron": "^3.0.3",
     "node-schedule": "^2.1.1",
-    "dayjs": "^1.11.10"
+    "node-telegram-bot-api": "^0.61.0",
+    "pg": "^8.11.1"
   }
 }
