@@ -124,17 +124,21 @@ bot.on("callback_query", async (query) => {
 
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
-  if (!ADMIN_IDS.includes(msg.from.id))
+  if (chatId !== ADMIN_ID)
     return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
 
   pendingCoupon[chatId] = { step: "awaiting_date" };
-  bot.sendMessage(chatId, "📅 Pour quelle date est ce prono ?\nEx: 2025-06-06 ou tape /today");
+  bot.sendMessage(
+    chatId,
+    "📅 Pour quelle date est ce prono ?\nEx: 2025-06-06 ou tape /today"
+  );
 });
 
 // Commande /today
 bot.onText(/\/today/, (msg) => {
   const chatId = msg.chat.id;
-  if (!pendingCoupon[chatId] || pendingCoupon[chatId].step !== "awaiting_date") return;
+  if (!pendingCoupon[chatId] || pendingCoupon[chatId].step !== "awaiting_date")
+    return;
 
   const today = new Date().toISOString().slice(0, 10);
   pendingCoupon[chatId].date = today;
@@ -148,7 +152,7 @@ bot.onText(/\/skip/, async (msg) => {
   const state = pendingCoupon[chatId];
   if (!state || state.step !== "awaiting_media") return;
 
-  await insertManualCoupon(state.content, null, null, state.date);
+  await insertManualCoupon(chatId, state.content, null, null, state.date, state.type);
   delete pendingCoupon[chatId];
   bot.sendMessage(chatId, "✅ Prono sans média enregistré.");
 });
@@ -159,14 +163,16 @@ bot.on("message", async (msg) => {
   const state = pendingCoupon[chatId];
   if (!state || msg.text?.startsWith("/")) return;
 
-  // Étape : date manuelle
   if (state.step === "awaiting_date" && /^\d{4}-\d{2}-\d{2}$/.test(msg.text)) {
     const inputDate = new Date(msg.text);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     if (inputDate < today) {
-      return bot.sendMessage(chatId, "❌ La date ne peut pas être dans le passé. Réessaie.");
+      return bot.sendMessage(
+        chatId,
+        "❌ La date ne peut pas être dans le passé. Réessaie."
+      );
     }
 
     state.date = msg.text;
@@ -174,7 +180,6 @@ bot.on("message", async (msg) => {
     return bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
   }
 
-  // Étape : contenu
   if (state.step === "awaiting_content" && msg.text) {
     state.content = msg.text;
     state.step = "awaiting_confirmation";
@@ -191,12 +196,11 @@ bot.on("message", async (msg) => {
     });
   }
 
-  // Étape : ajout du média
   if (state.step === "awaiting_media") {
     if (msg.photo) {
       const fileId = msg.photo.at(-1).file_id;
       const fileUrl = await bot.getFileLink(fileId);
-      await insertManualCoupon(state.content, fileUrl, "photo", state.date);
+      await insertManualCoupon(chatId, state.content, fileUrl, "photo", state.date, state.type);
       delete pendingCoupon[chatId];
       return bot.sendMessage(chatId, "✅ Prono avec photo enregistré.");
     }
@@ -204,25 +208,34 @@ bot.on("message", async (msg) => {
     if (msg.video) {
       const fileId = msg.video.file_id;
       const fileUrl = await bot.getFileLink(fileId);
-      await insertManualCoupon(state.content, fileUrl, "video", state.date);
+      await insertManualCoupon(chatId,state.content, fileUrl, "video", state.date, state.type);
       delete pendingCoupon[chatId];
       return bot.sendMessage(chatId, "✅ Prono avec vidéo enregistré.");
     }
 
-    return bot.sendMessage(chatId, "❌ Envoie une *photo*, une *vidéo* ou tape /skip.", { parse_mode: "Markdown" });
+    return bot.sendMessage(
+      chatId,
+      "❌ Envoie une *photo*, une *vidéo* ou tape /skip.",
+      { parse_mode: "Markdown" }
+    );
   }
 });
 
-// Callback pour confirmer ou annuler
+// Callback pour confirmer, annuler, ou choisir le type
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const state = pendingCoupon[chatId];
   if (!state) return bot.answerCallbackQuery(query.id);
 
   if (query.data === "confirm_prono") {
-    state.step = "awaiting_media";
-    await bot.sendMessage(chatId, "📎 Tu peux maintenant envoyer une *photo* ou une *vidéo* pour ce prono.\nSinon tape /skip.", {
-      parse_mode: "Markdown",
+    state.step = "awaiting_type"; // nouvelle étape pour choisir le type
+    await bot.sendMessage(chatId, "🎯 Choisis le type de prono :", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Gratuit", callback_data: "type_gratuit" }],
+          [{ text: "Premium", callback_data: "type_premium" }],
+        ],
+      },
     });
   }
 
@@ -231,9 +244,20 @@ bot.on("callback_query", async (query) => {
     await bot.sendMessage(chatId, "❌ Ajout du prono annulé.");
   }
 
+  if (state.step === "awaiting_type") {
+    if (query.data === "type_gratuit" || query.data === "type_premium") {
+      state.type = query.data === "type_gratuit" ? "gratuit" : "premium";
+      state.step = "awaiting_media";
+      await bot.sendMessage(
+        chatId,
+        "📎 Tu peux maintenant envoyer une *photo* ou une *vidéo* pour ce prono.\nSinon tape /skip.",
+        { parse_mode: "Markdown" }
+      );
+    }
+  }
+
   await bot.answerCallbackQuery(query.id);
 });
-
 // ===================Fonction d'insertion dans la BDD (à adapter)
 async function insertManualCoupon(content, mediaUrl, mediaType, date) {
   try {
@@ -881,79 +905,6 @@ bot.on("callback_query", async (query) => {
 /////////////////////////////////////xxxxxxxxxxxxxxxxx////////////////////////////////////////////////////
 
 
-bot.onText(/\/sendtestcoupon/, async (msg) => {
-  const chatId = msg.chat.id;
-  const isAdmin = chatId.toString() === process.env.ADMIN_CHAT_ID;
-
-  if (!isAdmin) {
-    return bot.sendMessage(chatId, "⛔️ Commande réservée à l'administrateur.");
-  }
-
-  const mockBets = [
-    {
-      name: 'Match Winner',
-      values: [
-        { value: 'Home', odd: '1.45' },
-        { value: 'Draw', odd: '3.60' },
-        { value: 'Away', odd: '6.00' }
-      ]
-    },
-    {
-      name: 'Double Chance',
-      values: [
-        { value: '1X', odd: '1.20' },
-        { value: '12', odd: '1.30' },
-        { value: 'X2', odd: '2.10' }
-      ]
-    },
-    {
-      name: 'Over/Under',
-      values: [
-        { value: 'Over 2.5', odd: '1.85' },
-        { value: 'Under 2.5', odd: '1.90' }
-      ]
-    },
-    {
-      name: 'Both Teams Score',
-      values: [
-        { value: 'Yes', odd: '1.75' },
-        { value: 'No', odd: '2.00' }
-      ]
-    }
-  ];
-
-  const tips = [];
-  const winTip = getSafestBet(mockBets, 'Match Winner');
-  if (winTip) tips.push(`🏆 1X2 : ${winTip.value} (${winTip.odd}) ${winTip.confidence}`);
-
-  const dcTip = getSafestBet(mockBets, 'Double Chance');
-  if (dcTip) tips.push(`🔀 Double Chance : ${dcTip.value} (${dcTip.odd}) ${dcTip.confidence}`);
-
-  const overTip = getTargetedBet(mockBets, 'Over/Under', 'Over 2.5');
-  if (overTip) tips.push(`🎯 Over 2.5 : ${overTip.odd} ${overTip.confidence}`);
-
-  const bttsTip = getTargetedBet(mockBets, 'Both Teams Score', 'Yes');
-  if (bttsTip) tips.push(`🤝 BTTS Oui : ${bttsTip.odd} ${bttsTip.confidence}`);
-
-  const message = formatMatchTips({
-    leagueName: 'Ligue 1 🇫🇷',
-    home: 'PSG',
-    away: 'OM',
-    hour: '20:00',
-    tips
-  });
-
-  try {
-    const { rows } = await pool.query('SELECT telegram_id FROM verified_users');
-    for (const row of rows) {
-      await bot.sendMessage(row.telegram_id, message, { parse_mode: 'Markdown' });
-    }
-    await bot.sendMessage(chatId, `✅ Coupon test envoyé à ${rows.length} utilisateurs vérifiés.`);
-  } catch (err) {
-    console.error('❌ Erreur envoi test coupon :', err.message);
-    await bot.sendMessage(chatId, "❌ Une erreur est survenue.");
-  }
-});
 
 
 
@@ -1682,6 +1633,49 @@ bot.on("message", async (msg) => {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
+// Commande /test_auto (admin uniquement)
+bot.onText(/\/test_auto/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (String(chatId) !== String(ADMIN_ID)) {
+    return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
+  }
+
+  bot.sendMessage(chatId, "⏳ Génération automatique en cours...");
+
+  try {
+    const europe = await generateCouponEurope();
+    const africa = await generateCouponAfrica();
+    const america = await generateCouponAmerica();
+    const asia = await generateCouponAsia();
+
+    const allMatches = [...europe, ...africa, ...america, ...asia];
+
+    if (allMatches.length === 0) {
+      return bot.sendMessage(chatId, "❌ Aucun match généré.");
+    }
+
+    const message = formatMatchTips(allMatches);
+
+    // Insertion ou mise à jour dans la DB
+    await pool.query(`
+      INSERT INTO daily_pronos (date, matches, created_at)
+      VALUES (CURRENT_DATE, $1, NOW())
+      ON CONFLICT (date) DO UPDATE
+      SET matches = EXCLUDED.matches,
+          content = NULL,
+          media_url = NULL,
+          media_type = NULL,
+          created_at = NOW()
+    `, [JSON.stringify(allMatches)]);
+
+    await bot.sendMessage(chatId, `✅ *COUPON TEST INSÉRÉ ET ENVOYÉ :*\n\n${message}`, {
+      parse_mode: "Markdown",
+    });
+  } catch (err) {
+    console.error("❌ Erreur génération auto :", err);
+    bot.sendMessage(chatId, "❌ Erreur lors de la génération automatique.");
+  }
+});
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
