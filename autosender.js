@@ -1,37 +1,37 @@
 const { pool } = require('./db');
 const { bot } = require('./bot');
 const moment = require('moment-timezone');
-require('dotenv').config();
 
 const CANAL_ID = process.env.CANAL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
 async function sendScheduledMessages() {
-  // 🔁 Heure actuelle à Lomé
-  const nowLome = moment().tz('Africa/Lome');
-  const currentTime = nowLome.format('HH:mm');
-  const currentDate = nowLome.format('YYYY-MM-DD');
+  // Obtenir l’heure actuelle à Lomé, formatée HH:mm
+  const currentTime = moment().tz('Africa/Lome').format('HH:mm');
 
   try {
-    const { rows } = await pool.query(
+    // Récupérer tous les messages prévus pour cette heure exacte
+    const res = await pool.query(
       "SELECT * FROM message_fixes WHERE heures = $1",
       [currentTime]
     );
 
-    for (const msg of rows) {
-      // 🔁 Évite les doublons
-      const { rowCount } = await pool.query(
-        "SELECT 1 FROM message_logs WHERE message_id = $1 AND send_date = $2",
-        [msg.id, currentDate]
+    for (const msg of res.rows) {
+      // 🔒 Vérifie si ce message a déjà été envoyé dans les 10 dernières minutes
+      const check = await pool.query(
+        `SELECT 1 FROM message_logs
+         WHERE message_id = $1
+         AND sent_at > NOW() - INTERVAL '10 minutes'`,
+        [msg.id]
       );
 
-      if (rowCount > 0) {
-        console.log(`⏩ Message #${msg.id} déjà envoyé aujourd’hui.`);
+      if (check.rowCount > 0) {
+        console.log(`⏭️ Message ${msg.id} déjà envoyé récemment. Ignoré.`);
         continue;
       }
 
       try {
-        // ✅ Envoie du message
+        // Envoi du message selon le type
         if (msg.media_type === 'photo' && msg.media_url) {
           await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.media_text });
         } else if (msg.media_type === 'video' && msg.media_url) {
@@ -40,38 +40,29 @@ async function sendScheduledMessages() {
           await bot.sendMessage(CANAL_ID, msg.media_text);
         }
 
-        // ✅ Log
+        // ✅ Ajoute un log pour éviter les doublons
         await pool.query(
-          `INSERT INTO message_logs (message_id, send_date) VALUES ($1, $2)`,
-          [msg.id, currentDate]
+          `INSERT INTO message_logs (message_id) VALUES ($1)`,
+          [msg.id]
         );
 
-        await bot.sendMessage(ADMIN_ID, `📤 Message fixe #${msg.id} envoyé à ${currentTime} (heure Lomé).`);
-
-      } catch (err) {
-        console.error("❌ Erreur d'envoi :", err);
-        await bot.sendMessage(ADMIN_ID, `❌ Erreur lors de l'envoi du message fixe #${msg.id}.`);
-      }
-    }
-  } catch (err) {
-    console.error("❌ Erreur DB :", err);
-  }
-}
-
-
-        // ✅ Notification à l’admin
-        await bot.sendMessage(ADMIN_ID, `📤 Message envoyé dans le canal à ${currentTime}.`);
+        await bot.sendMessage(
+          ADMIN_ID,
+          `📤 Message (ID ${msg.id}) envoyé à ${currentTime} (Lomé).`
+        );
       } catch (err) {
         console.error("Erreur d'envoi :", err);
-        // ❌ Si erreur, informe aussi l’admin
-        await bot.sendMessage(ADMIN_ID, `❌ Erreur lors de l'envoi du message fixe à ${currentTime}.`);
+        await bot.sendMessage(
+          ADMIN_ID,
+          `❌ Erreur lors de l'envoi du message ID ${msg.id} à ${currentTime} :\n${err.message}`
+        );
       }
     }
   } catch (err) {
     console.error("Erreur DB:", err);
+    await bot.sendMessage(ADMIN_ID, `❌ Erreur DB : ${err.message}`);
   }
 }
 
-// Appel toutes les 60 secondes
+// Appel toutes les minutes
 setInterval(sendScheduledMessages, 60 * 1000);
-
