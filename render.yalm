@@ -1,11 +1,25 @@
+# render.yaml 
 services:
-  - type: worker
+  - type: web
     name: 1xboom-bot
     env: node
     plan: free
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: node server.js
     autoDeploy: true
+    healthCheckPath: "/ping"
     envVars:
       - key: BOT_TOKEN
-        value: 8483234938:AAGCXB3K0SHKswifFNpPbIU2EiUaYHdNpxM
+        fromEnvVar: BOT_TOKEN      # valeur configurée dans Render
+      - key: SUPABASE_URL
+        fromEnvVar: SUPABASE_URL   # valeur configurée dans Render
+      - key: SUPABASE_KEY
+        fromEnvVar: SUPABASE_KEY   # valeur configurée dans Render
+      - key: ADMIN_ID
+        fromEnvVar: ADMIN_ID       # valeur configurée dans Render
+      - key: CHANNEL_ID
+        fromEnvVar: CHANNEL_ID     # valeur configurée dans Render
+      - key: BOT_LINK
+        fromEnvVar: BOT_LINK       # valeur configurée dans Render (optionnel)
+      - key: TZ
+        fromEnvVar: TZ             # valeur configurée dans Render (ex: Africa/Lome)
