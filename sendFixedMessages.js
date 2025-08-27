@@ -10,7 +10,6 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
  */
 async function sendFixedMessages(hourStr) {
   try {
-    // Récupère uniquement les messages fixes à l'heure demandée
     const { rows } = await pool.query(`
       SELECT * FROM message_fixes
       WHERE $1 = ANY(string_to_array(heures, ','))
