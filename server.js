@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bot = require("./bot"); 
+const sendFixedMessagesDaily = require("./sendFixedMessagesDaily");
 const sendFixedMessages = require("./sendFixedMessages");
 
 const app = express();
@@ -26,15 +27,29 @@ app.listen(PORT, () => {
 /////////////////////////////////////////////////////////////////////////////
 
 
-const sendFixedMessagesDaily = require("./sendFixedMessagesDaily"); // notre script rotation FR/EN
 
-app.get("/cron-task/fixed-messages-daily", async (req, res) => {
+
+// Route pour choisir les 10 messages du jour (rotation FR/EN)
+app.get("/cron-task/fixed-daily", async (req, res) => {
   try {
     await sendFixedMessagesDaily();
-    res.send("✅ Messages fixes quotidiens envoyés avec rotation FR/EN");
+    res.send("✅ Messages du jour sélectionnés (rotation FR/EN)");
   } catch (err) {
     console.error(err);
-    res.status(500).send("❌ Erreur lors de l'envoi des messages fixes");
+    res.status(500).send("❌ Erreur daily fixed");
+  }
+});
+
+// Route pour envoyer les messages fixes à une heure donnée
+app.get("/cron-task/fixed", async (req, res) => {
+  try {
+    const hour = req.query.hour; // ex: ?hour=06:00
+    if (!hour) return res.status(400).send("❌ Heure manquante");
+    await sendFixedMessages(hour);
+    res.send(`✅ Messages fixes envoyés pour ${hour}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("❌ Erreur fixed");
   }
 });
 
