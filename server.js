@@ -26,16 +26,15 @@ app.listen(PORT, () => {
 /////////////////////////////////////////////////////////////////////////////
 
 
-app.get("/cron-task/fixed-messages", async (req, res) => {
-  try {
-    const hour = req.query.hour; // Exemple : ?hour=06:00
-    if (!hour) return res.status(400).send("❌ Paramètre 'hour' manquant");
+const sendFixedMessagesDaily = require("./sendFixedMessagesDaily"); // notre script rotation FR/EN
 
-    await sendFixedMessages(hour);
-    res.send(`✅ Messages fixes envoyés pour ${hour}`);
+app.get("/cron-task/fixed-messages-daily", async (req, res) => {
+  try {
+    await sendFixedMessagesDaily();
+    res.send("✅ Messages fixes quotidiens envoyés avec rotation FR/EN");
   } catch (err) {
     console.error(err);
-    res.status(500).send("❌ Erreur envoi messages fixes");
+    res.status(500).send("❌ Erreur lors de l'envoi des messages fixes");
   }
 });
 
