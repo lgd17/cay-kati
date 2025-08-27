@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bot = require("./bot"); 
+const sendFixedMessages = require("./sendFixedMessages");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,7 +25,17 @@ app.listen(PORT, () => {
 
 /////////////////////////////////////////////////////////////////////////////
 
-app.get("/ping", (req, res) => {
-  res.send("✅ Service UP");
+
+app.get("/cron-task/fixed-messages", async (req, res) => {
+  try {
+    const hour = req.query.hour; // Exemple : ?hour=06:00
+    if (!hour) return res.status(400).send("❌ Paramètre 'hour' manquant");
+
+    await sendFixedMessages(hour);
+    res.send(`✅ Messages fixes envoyés pour ${hour}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("❌ Erreur envoi messages fixes");
+  }
 });
 
