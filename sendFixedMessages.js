@@ -29,16 +29,7 @@ async function sendFixedMessages(hour) {
     for (let msg of rows) {
       for (let user of users.rows) {
         try {
-          if (msg.media_type === "photo" && msg.media_url) {
-            await bot.sendPhoto(user.telegram_id, msg.media_url, {
-              caption: msg.media_text,
-              parse_mode: "Markdown",
-            });
-          } else {
-            await bot.sendMessage(user.telegram_id, msg.media_text, {
-              parse_mode: "Markdown",
-            });
-          }
+          await sendMedia(bot, user.telegram_id, msg);
         } catch (err) {
           console.error(`❌ Erreur envoi à ${user.telegram_id} :`, err.message);
         }
@@ -46,16 +37,7 @@ async function sendFixedMessages(hour) {
 
       // (optionnel) aussi dans le channel
       if (CHANNEL_ID) {
-        if (msg.media_type === "photo" && msg.media_url) {
-          await bot.sendPhoto(CHANNEL_ID, msg.media_url, {
-            caption: msg.media_text,
-            parse_mode: "Markdown",
-          });
-        } else {
-          await bot.sendMessage(CHANNEL_ID, msg.media_text, {
-            parse_mode: "Markdown",
-          });
-        }
+        await sendMedia(bot, CHANNEL_ID, msg);
       }
     }
 
@@ -63,6 +45,55 @@ async function sendFixedMessages(hour) {
 
   } catch (err) {
     console.error("❌ Erreur lors de l'envoi des messages fixes :", err.message);
+  }
+}
+
+/**
+ * 🔹 Envoie un message fixe avec son média correct
+ */
+async function sendMedia(bot, targetId, msg) {
+  switch (msg.media_type) {
+    case "photo":
+      await bot.sendPhoto(targetId, msg.media_url, {
+        caption: msg.media_text,
+        parse_mode: "Markdown",
+      });
+      break;
+
+    case "video":
+      await bot.sendVideo(targetId, msg.media_url, {
+        caption: msg.media_text,
+        parse_mode: "Markdown",
+      });
+      break;
+
+    case "voice":
+      await bot.sendVoice(targetId, msg.media_url);
+      if (msg.media_text) {
+        await bot.sendMessage(targetId, msg.media_text, {
+          parse_mode: "Markdown",
+        });
+      }
+      break;
+
+    case "audio":
+      await bot.sendAudio(targetId, msg.media_url, {
+        caption: msg.media_text,
+        parse_mode: "Markdown",
+      });
+      break;
+
+    default: // texte seul ou lien
+      if (msg.media_url?.startsWith("http")) {
+        await bot.sendMessage(targetId, `${msg.media_text}\n🔗 ${msg.media_url}`, {
+          parse_mode: "Markdown",
+        });
+      } else {
+        await bot.sendMessage(targetId, msg.media_text, {
+          parse_mode: "Markdown",
+        });
+      }
+      break;
   }
 }
 
