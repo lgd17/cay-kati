@@ -121,9 +121,22 @@ bot.on("callback_query", async (query) => {
   await bot.answerCallbackQuery(query.id);
 });
 
-bot.on("message", (msg) => {
-  console.log("Chat ID:", msg.chat.id);
+// Commande pour obtenir l'ID du chat courant
+bot.onText(/\/getid/, async (msg) => {
+  const chatId = msg.chat.id;
+  const chatType = msg.chat.type;
+  const chatName = msg.chat.title || msg.chat.first_name || "Inconnu";
+
+  await bot.sendMessage(
+    msg.chat.id,
+    `📌 Informations sur ce chat :\n\n` +
+    `🆔 Chat ID : <code>${chatId}</code>\n` +
+    `📛 Nom : ${chatName}\n` +
+    `📂 Type : ${chatType}`,
+    { parse_mode: "HTML" }
+  );
 });
+
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
