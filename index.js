@@ -600,7 +600,7 @@ bot.onText(/\/topparrains/, async (msg) => {
   }
 });
 
-const CHANNEL_ID = "@linktree_free_prediction";
+const CHANNEL_ID = "@Roux_Canal_linktree_intermidiare";
 
 // ✅ Classement automatique tous les dimanches à 18h (heure Lomé)
 schedule.scheduleJob({ hour: 18, minute: 0, dayOfWeek: 0 }, async () => {
@@ -635,7 +635,7 @@ schedule.scheduleJob({ hour: 18, minute: 0, dayOfWeek: 0 }, async () => {
   }
 });
 
-const TELEGRAM_CHANNEL_ID = "@linktree_free_prediction";
+const TELEGRAM_CHANNEL_ID = "@Roux_Canal_linktree_intermidiare";
 
 // 🔁 Fonction pour publier le Top 5 mensuel et reset les points
 async function publierClassementEtReset() {
