@@ -121,6 +121,9 @@ bot.on("callback_query", async (query) => {
   await bot.answerCallbackQuery(query.id);
 });
 
+bot.on("message", (msg) => {
+  console.log("Chat ID:", msg.chat.id);
+});
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
