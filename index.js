@@ -3,6 +3,9 @@ const schedule = require('node-schedule');
 const { pool } = require("./db");
 const bot = require("./bot");
 require("./server");
+require("./pingCron");
+require("./autoSend");
+const { ping } = require("./pingServer")
 require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
