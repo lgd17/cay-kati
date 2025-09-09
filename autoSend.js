@@ -6,32 +6,26 @@ const cron = require('node-cron');
 const CANAL_ID = process.env.CANAL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
-// Listes de messages FR et EN
 let messagesFR = [];
 let messagesEN = [];
 
-// 🔹 Charger tous les messages fixes depuis la DB
+// Charger tous les messages fixes
 async function loadMessages() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
     messagesFR = res.rows.filter(m => m.lang && m.lang.toLowerCase() === 'fr');
     messagesEN = res.rows.filter(m => m.lang && m.lang.toLowerCase() === 'en');
-
     console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
-    await bot.sendMessage(
-      ADMIN_ID,
-      `📥 Messages quotidiens chargés à ${moment().tz('Africa/Lome').format('HH:mm')}`
-    );
+    await bot.sendMessage(ADMIN_ID, `📥 Messages quotidiens chargés à ${moment().tz('Africa/Lome').format('HH:mm')}`);
   } catch (err) {
     console.error("❌ Erreur en chargeant les messages :", err.message);
     await bot.sendMessage(ADMIN_ID, `❌ Erreur en chargeant les messages : ${err.message}`);
   }
 }
 
-// 🔹 Sélection 5 messages par langue pour la journée (rotation)
+// Sélection 5 messages par langue pour la journée
 async function getDailyMessages(langMessages, type) {
   const res = await pool.query("SELECT last_index FROM daily_rotation WHERE lang = $1", [type]);
-  
   let lastIndex = 0;
   if (res.rowCount > 0) {
     lastIndex = parseInt(res.rows[0].last_index, 10);
@@ -63,7 +57,7 @@ async function getDailyMessages(langMessages, type) {
   return daily;
 }
 
-// 🔹 Envoyer les messages à l'heure prévue
+// Envoyer les messages à l'heure prévue
 async function sendScheduledMessages() {
   const currentTime = moment().tz('Africa/Lome').format('HH:mm');
 
@@ -72,21 +66,17 @@ async function sendScheduledMessages() {
     const dailyEN = await getDailyMessages(messagesEN, 'en');
     const dailyMessages = [...dailyFR, ...dailyEN];
 
-    // 🔹 Sécurité : ne garder que les messages valides avec 'heures' et 'id'
     const toSend = dailyMessages.filter(msg => msg && msg.heures && msg.id);
-
     const sendNow = toSend.filter(msg => msg.heures === currentTime);
 
     for (const msg of sendNow) {
       try {
-        // Vérifier doublons
         const check = await pool.query(
           `SELECT 1 FROM message_logs WHERE message_id = $1 AND sent_at > NOW() - INTERVAL '10 minutes'`,
           [msg.id]
         );
         if (check.rowCount > 0) continue;
 
-        // Envoi selon le type
         if (msg.media_type === 'photo' && msg.media_url) {
           await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.media_text });
         } else if (msg.media_type === 'video' && msg.media_url) {
@@ -97,7 +87,6 @@ async function sendScheduledMessages() {
           await bot.sendMessage(CANAL_ID, msg.media_text);
         }
 
-        // Log dans la DB
         await pool.query(`INSERT INTO message_logs (message_id) VALUES ($1)`, [msg.id]);
         console.log(`✅ Message ${msg.id} envoyé à ${currentTime}`);
       } catch (err) {
@@ -111,13 +100,13 @@ async function sendScheduledMessages() {
   }
 }
 
-// 🔹 Cron pour charger les messages tous les jours à 05:45 Lomé
+// Cron pour charger messages tous les jours à 05:45 Lomé
 cron.schedule('45 5 * * *', async () => {
   console.log("⏱️ Chargement quotidien des messages à 05:45 Lomé...");
   await loadMessages();
 }, { timezone: 'Africa/Lome' });
 
-// 🔹 Cron toutes les minutes pour envoyer les messages fixes
+// Cron toutes les minutes pour envoyer les messages fixes
 cron.schedule('* * * * *', async () => {
   await sendScheduledMessages();
 }, { timezone: 'Africa/Lome' });
