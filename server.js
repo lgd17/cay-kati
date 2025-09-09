@@ -26,30 +26,8 @@ app.listen(PORT, () => {
 
 /////////////////////////////////////////////////////////////////////////////
 
-
-
-
-// Route pour choisir les 10 messages du jour (rotation FR/EN)
-app.get("/cron-task/fixed-daily", async (req, res) => {
-  try {
-    await sendFixedMessagesDaily();
-    res.send("✅ Messages du jour sélectionnés (rotation FR/EN)");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("❌ Erreur daily fixed");
-  }
+app.get('/ping', (req, res) => {
+  res.status(200).send('ping✅');
 });
 
-// Route pour envoyer les messages fixes à une heure donnée
-app.get("/cron-task/fixed", async (req, res) => {
-  try {
-    const hour = req.query.hour; // ex: ?hour=06:00
-    if (!hour) return res.status(400).send("❌ Heure manquante");
-    await sendFixedMessages(hour);
-    res.send(`✅ Messages fixes envoyés pour ${hour}`);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("❌ Erreur fixed");
-  }
-});
 
