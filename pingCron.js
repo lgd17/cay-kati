@@ -1,5 +1,5 @@
 const { ping } = require("./pingServer");
-const { bot } = require("./bot");
+const bot = require("./bot");
 const ADMIN_ID = process.env.ADMIN_ID;
 const schedule = require("node-schedule");
 
