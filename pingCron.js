@@ -1,22 +1,23 @@
 const { ping } = require("./pingServer");
+const { bot } = require("./bot");
+const ADMIN_ID = process.env.ADMIN_ID;
 const schedule = require("node-schedule");
 
 let cycleActive = false;
 
-// Vérifie si on est dans la plage 05:30 → 04:30 du lendemain
+// Vérifie si on est dans la plage 05:30 → 04:30
 function isWithinPingHours() {
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
 
-  // Cas 05:30 → 23:59
+  // 05:30 → 23:59
   if (hours > 5 || (hours === 5 && minutes >= 30)) return true;
 
-  // Cas 00:00 → 04:30
+  // 00:00 → 04:30
   if (hours < 4) return true;
   if (hours === 4 && minutes <= 30) return true;
 
-  // Entre 04:31 et 05:29 → pause
   return false;
 }
 
@@ -24,14 +25,16 @@ function isWithinPingHours() {
 schedule.scheduleJob('*/14 * * * *', async () => {
   const inCycle = isWithinPingHours();
 
-  // Détecter début et fin de cycle pour log
   if (inCycle && !cycleActive) {
     cycleActive = true;
     console.log(`⏱️ Début du cycle de ping à ${new Date().toLocaleString()}`);
+    if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `⏱️ Début du cycle de ping`);
   }
+
   if (!inCycle && cycleActive) {
     cycleActive = false;
     console.log(`⏱️ Fin du cycle de ping à ${new Date().toLocaleString()}`);
+    if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `⏱️ Fin du cycle de ping`);
   }
 
   if (!inCycle) return;
@@ -49,7 +52,9 @@ schedule.scheduleJob('*/14 * * * *', async () => {
 if (isWithinPingHours()) {
   cycleActive = true;
   console.log(`⏱️ Début du cycle de ping immédiat à ${new Date().toLocaleString()}`);
+  bot.sendMessage(ADMIN_ID, `⏱️ Début du cycle de ping immédiat`).catch(() => {});
   ping().catch(err => console.error("❌ Erreur ping immédiat :", err.message));
 }
 
 console.log("✅ PingCron lancé avec cycle 05:30 → 04:30, toutes les 14 minutes.");
+
