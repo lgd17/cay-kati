@@ -14,10 +14,14 @@ let messagesEN = [];
 async function loadMessages() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
-    messagesFR = res.rows.filter(m => m.lang === 'fr');
-    messagesEN = res.rows.filter(m => m.lang === 'en');
+    messagesFR = res.rows.filter(m => m.langue.toLowerCase() === 'fr');
+    messagesEN = res.rows.filter(m => m.langue.toLowerCase() === 'en');
+
     console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
-    await bot.sendMessage(ADMIN_ID, `📥 Messages quotidiens chargés à ${moment().tz('Africa/Lome').format('HH:mm')}`);
+    await bot.sendMessage(
+      ADMIN_ID,
+      `📥 Messages quotidiens chargés à ${moment().tz('Africa/Lome').format('HH:mm')}`
+    );
   } catch (err) {
     console.error("❌ Erreur en chargeant les messages :", err.message);
     await bot.sendMessage(ADMIN_ID, `❌ Erreur en chargeant les messages : ${err.message}`);
@@ -27,24 +31,32 @@ async function loadMessages() {
 // 🔹 Sélection 5 messages par langue pour la journée (rotation)
 async function getDailyMessages(langMessages, type) {
   const res = await pool.query("SELECT last_index FROM daily_rotation WHERE lang = $1", [type]);
-  let startIndex = 0;
-  if (res.rowCount > 0) startIndex = (res.rows[0].last_index + 5) % langMessages.length;
+  
+  let lastIndex = 0;
+  if (res.rowCount > 0) {
+    lastIndex = parseInt(res.rows[0].last_index, 10);
+    if (isNaN(lastIndex)) lastIndex = 0;
+  }
 
+  const startIndex = (lastIndex + 5) % langMessages.length;
   const daily = [];
+
   for (let i = 0; i < 5; i++) {
     const index = (startIndex + i) % langMessages.length;
     daily.push(langMessages[index]);
   }
 
+  const newIndex = (startIndex + 4) % langMessages.length;
+
   if (res.rowCount > 0) {
     await pool.query(
       "UPDATE daily_rotation SET last_index = $1 WHERE lang = $2",
-      [(startIndex + 4) % langMessages.length, type]
+      [newIndex, type]
     );
   } else {
     await pool.query(
       "INSERT INTO daily_rotation (lang, last_index) VALUES ($1, $2)",
-      [type, 4]
+      [type, newIndex]
     );
   }
 
@@ -62,10 +74,12 @@ async function sendScheduledMessages() {
     const dailyMessages = [...dailyFR, ...dailyEN];
 
     // 🔹 Sécurité : ne garder que les messages valides avec 'heures'
-    const toSend = dailyMessages.filter(msg => msg && msg.heures === currentTime);
+    const toSend = dailyMessages.filter(msg => msg && msg.heures && msg.id);
 
-    // 🔹 Envoi des messages
-    for (const msg of toSend) {
+    // Filtrer selon l'heure actuelle
+    const sendNow = toSend.filter(msg => msg.heures === currentTime);
+
+    for (const msg of sendNow) {
       try {
         // Vérifier doublons
         const check = await pool.query(
@@ -103,15 +117,11 @@ async function sendScheduledMessages() {
 cron.schedule('45 5 * * *', async () => {
   console.log("⏱️ Chargement quotidien des messages à 05:45 Lomé...");
   await loadMessages();
-}, {
-  timezone: 'Africa/Lome'
-});
+}, { timezone: 'Africa/Lome' });
 
 // 🔹 Cron toutes les minutes pour envoyer les messages fixes
 cron.schedule('* * * * *', async () => {
   await sendScheduledMessages();
-}, {
-  timezone: 'Africa/Lome'
-});
+}, { timezone: 'Africa/Lome' });
 
 console.log("✅ autoSend.js lancé avec rotation FR/EN, support texte/photo/vidéo/audio et heures fixes.");
