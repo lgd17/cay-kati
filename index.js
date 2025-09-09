@@ -11,7 +11,7 @@ require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
 
-
+const ADMIN_ID = process.env.ADMIN_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
  
 
