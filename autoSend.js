@@ -61,9 +61,10 @@ async function sendScheduledMessages() {
     const dailyEN = await getDailyMessages(messagesEN, 'en');
     const dailyMessages = [...dailyFR, ...dailyEN];
 
-    // Filtrer ceux qui doivent être envoyés maintenant
-    const toSend = dailyMessages.filter(msg => msg.heures === currentTime);
+    // 🔹 Sécurité : ne garder que les messages valides avec 'heures'
+    const toSend = dailyMessages.filter(msg => msg && msg.heures === currentTime);
 
+    // 🔹 Envoi des messages
     for (const msg of toSend) {
       try {
         // Vérifier doublons
@@ -114,5 +115,3 @@ cron.schedule('* * * * *', async () => {
 });
 
 console.log("✅ autoSend.js lancé avec rotation FR/EN, support texte/photo/vidéo/audio et heures fixes.");
-
-
