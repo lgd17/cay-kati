@@ -14,8 +14,8 @@ let messagesEN = [];
 async function loadMessages() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
-    messagesFR = res.rows.filter(m => m.langue.toLowerCase() === 'fr');
-    messagesEN = res.rows.filter(m => m.langue.toLowerCase() === 'en');
+    messagesFR = res.rows.filter(m => m.lang && m.lang.toLowerCase() === 'fr');
+    messagesEN = res.rows.filter(m => m.lang && m.lang.toLowerCase() === 'en');
 
     console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
     await bot.sendMessage(
@@ -51,12 +51,12 @@ async function getDailyMessages(langMessages, type) {
   if (res.rowCount > 0) {
     await pool.query(
       "UPDATE daily_rotation SET last_index = $1 WHERE lang = $2",
-      [newIndex, type]
+      [isNaN(newIndex) ? 0 : newIndex, type]
     );
   } else {
     await pool.query(
       "INSERT INTO daily_rotation (lang, last_index) VALUES ($1, $2)",
-      [type, newIndex]
+      [type, isNaN(newIndex) ? 0 : newIndex]
     );
   }
 
@@ -68,15 +68,13 @@ async function sendScheduledMessages() {
   const currentTime = moment().tz('Africa/Lome').format('HH:mm');
 
   try {
-    // Récupérer les messages du jour
     const dailyFR = await getDailyMessages(messagesFR, 'fr');
     const dailyEN = await getDailyMessages(messagesEN, 'en');
     const dailyMessages = [...dailyFR, ...dailyEN];
 
-    // 🔹 Sécurité : ne garder que les messages valides avec 'heures'
+    // 🔹 Sécurité : ne garder que les messages valides avec 'heures' et 'id'
     const toSend = dailyMessages.filter(msg => msg && msg.heures && msg.id);
 
-    // Filtrer selon l'heure actuelle
     const sendNow = toSend.filter(msg => msg.heures === currentTime);
 
     for (const msg of sendNow) {
