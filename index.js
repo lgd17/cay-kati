@@ -249,7 +249,7 @@ bot.on("message", async (msg) => {
   }
 
   // Étape média
-  iif (state.step === "awaiting_media") {
+  if (state.step === "awaiting_media") {
   let mediaUrl = null;
   let mediaType = null;
 
