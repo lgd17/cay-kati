@@ -176,7 +176,11 @@ bot.onText(/\/getid/, async (msg) => {
 // ====================== AJOUT MANUEL DE PRONO ======================
 
 
-// === Commande pour démarrer l'ajout ===
+// === Déclarations ===
+const pendingCoupon = {}; // stocke l'état du prono en cours
+const ADMIN_IDS = [/* tes ID admins */];
+
+// --- Commande /ajouter_prono ---
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -185,13 +189,10 @@ bot.onText(/\/ajouter_prono/, (msg) => {
     return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
 
   pendingCoupon[chatId] = { step: "awaiting_date" };
-  bot.sendMessage(
-    chatId,
-    "📅 Pour quelle date est ce prono ?\nEx: 2025-06-06 ou tape /today"
-  );
+  bot.sendMessage(chatId, "📅 Pour quelle date est ce prono ? Ex: 2025-09-10 ou tape /today");
 });
 
-// === Commande /today pour date du jour ===
+// --- Commande /today ---
 bot.onText(/\/today/, (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
@@ -203,7 +204,7 @@ bot.onText(/\/today/, (msg) => {
   bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
 });
 
-// === Commande /skip pour ignorer le média ===
+// --- Commande /skip (ignorer le média) ---
 bot.onText(/\/skip/, async (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
@@ -213,29 +214,27 @@ bot.onText(/\/skip/, async (msg) => {
   delete pendingCoupon[chatId];
 });
 
-// === Gestion des messages texte / média ===
+// --- Gestion des messages ---
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
   if (!state || msg.text?.startsWith("/")) return;
 
-  // ---------- Étape date ----------
+  // --- Étape Date ---
   if (state.step === "awaiting_date" && /^\d{4}-\d{2}-\d{2}$/.test(msg.text)) {
     const inputDate = new Date(msg.text);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    if (inputDate < today) {
+    if (inputDate < today)
       return bot.sendMessage(chatId, "❌ La date ne peut pas être dans le passé. Réessaie.");
-    }
 
     state.date = msg.text;
     state.step = "awaiting_content";
     return bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
   }
 
-  // ---------- Étape contenu ----------
-  if (state.step === "awaiting_content" && msg.text) {
+  // --- Étape Contenu ---
+  if (state.step === "awaiting_content") {
     state.content = msg.text;
     state.step = "awaiting_confirmation";
 
@@ -251,24 +250,15 @@ bot.on("message", async (msg) => {
     });
   }
 
-  // ---------- Étape média ----------
+  // --- Étape Média ---
   if (state.step === "awaiting_media") {
     let mediaUrl = null;
     let mediaType = null;
 
-    if (msg.photo) {
-      mediaUrl = msg.photo.at(-1).file_id;
-      mediaType = "photo";
-    } else if (msg.video) {
-      mediaUrl = msg.video.file_id;
-      mediaType = "video";
-    } else if (msg.voice) {
-      mediaUrl = msg.voice.file_id;
-      mediaType = "voice";
-    } else if (msg.audio) {
-      mediaUrl = msg.audio.file_id;
-      mediaType = "audio";
-    }
+    if (msg.photo) { mediaUrl = msg.photo.at(-1).file_id; mediaType = "photo"; }
+    else if (msg.video) { mediaUrl = msg.video.file_id; mediaType = "video"; }
+    else if (msg.voice) { mediaUrl = msg.voice.file_id; mediaType = "voice"; }
+    else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
 
     if (mediaUrl) {
       await insertManualCoupon(chatId, state.content, mediaUrl, mediaType, state.date, state.type);
@@ -276,24 +266,18 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    return bot.sendMessage(
-      chatId,
-      "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.",
-      { parse_mode: "Markdown" }
-    );
+    return bot.sendMessage(chatId, "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.", { parse_mode: "Markdown" });
   }
 });
 
-// ---------- Gestion callback pour confirm / annuler / type ----------
+// --- Gestion des boutons inline (confirm / cancel / type) ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const state = pendingCoupon[chatId];
   if (!state) return bot.answerCallbackQuery(query.id);
 
-  const data = query.data;
-
-  // ✅ Confirmer le prono
-  if (data === "confirm_prono") {
+  // --- Confirmation ---
+  if (query.data === "confirm_prono") {
     state.step = "awaiting_type";
     await bot.sendMessage(chatId, "🎯 Choisis le type de prono :", {
       reply_markup: {
@@ -305,60 +289,40 @@ bot.on("callback_query", async (query) => {
     });
   }
 
-  // ❌ Annuler le prono
-  if (data === "cancel_prono") {
+  // --- Annulation ---
+  if (query.data === "cancel_prono") {
     delete pendingCoupon[chatId];
     await bot.sendMessage(chatId, "❌ Ajout du prono annulé.");
   }
 
-  // 🎯 Choix du type
-  if (state.step === "awaiting_type") {
-    if (data === "type_gratuit" || data === "type_premium") {
-      state.type = data === "type_gratuit" ? "gratuit" : "premium";
-      state.step = "awaiting_media";
-
-      await bot.sendMessage(
-        chatId,
-        "📎 Tu peux maintenant envoyer une *photo*, *vidéo*, *note vocale* ou *audio* pour ce prono.\nSinon tape /skip.",
-        { parse_mode: "Markdown" }
-      );
-    }
+  // --- Choix du type ---
+  if (state.step === "awaiting_type" && (query.data === "type_gratuit" || query.data === "type_premium")) {
+    state.type = query.data === "type_gratuit" ? "gratuit" : "premium";
+    state.step = "awaiting_media";
+    await bot.sendMessage(chatId, "📎 Tu peux maintenant envoyer une *photo*, *vidéo*, *note vocale* ou *audio* pour ce prono.\nSinon tape /skip.", { parse_mode: "Markdown" });
   }
 
   await bot.answerCallbackQuery(query.id);
 });
 
-// =================== Fonction insertion en BDD ===================
+// --- Fonction d'insertion compatible PostgreSQL ---
 async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
+    const timestamp = new Date(date); // convertit en timestamp JS
+
     await pool.query(`
-      INSERT INTO daily_pronos (content, media_url, media_type, date, date_only, type)
-      VALUES ($1, $2, $3, $4, $4::date, $5)
-      ON CONFLICT (date) DO UPDATE
-      SET content = EXCLUDED.content,
-          media_url = EXCLUDED.media_url,
-          media_type = EXCLUDED.media_type,
-          type = EXCLUDED.type
-    `, [content, mediaUrl, mediaType, date, type]);
+      INSERT INTO daily_pronos (content, media_url, media_type, date, type)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [content, mediaUrl, mediaType, timestamp, type]);
 
-    // Envoie dans Telegram
-    if (mediaType === 'photo') {
-      await bot.sendPhoto(chatId, mediaUrl, { caption: content });
-    } else if (mediaType === 'video') {
-      await bot.sendVideo(chatId, mediaUrl, { caption: content });
-    } else if (mediaType === 'voice') {
-      await bot.sendVoice(chatId, mediaUrl);
-      await bot.sendMessage(chatId, content);
-    } else if (mediaType === 'audio') {
-      await bot.sendAudio(chatId, mediaUrl);
-      await bot.sendMessage(chatId, content);
-    } else {
-      await bot.sendMessage(chatId, content);
-    }
+    // Envoi Telegram
+    if (mediaType === "photo") await bot.sendPhoto(chatId, mediaUrl, { caption: content });
+    else if (mediaType === "video") await bot.sendVideo(chatId, mediaUrl, { caption: content });
+    else if (mediaType === "voice") { await bot.sendVoice(chatId, mediaUrl); await bot.sendMessage(chatId, content); }
+    else if (mediaType === "audio") { await bot.sendAudio(chatId, mediaUrl); await bot.sendMessage(chatId, content); }
+    else await bot.sendMessage(chatId, content);
 
-    await bot.sendMessage(chatId, `✅ Coupon *${type.toUpperCase()}* ajouté pour le ${date}`, {
-      parse_mode: "Markdown"
-    });
+    await bot.sendMessage(chatId, `✅ Coupon *${type.toUpperCase()}* ajouté pour le ${date}`, { parse_mode: "Markdown" });
 
   } catch (err) {
     console.error("❌ Erreur lors de l'ajout manuel :", err);
