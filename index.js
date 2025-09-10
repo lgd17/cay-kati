@@ -282,10 +282,6 @@ if (state.step === "awaiting_media") {
 } // ← fermeture du if (state.step === "awaiting_media")
 
 
-  return bot.sendMessage(chatId, "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.", { parse_mode: "Markdown" });
-}
-
-
 // Gestion des boutons confirm / annuler / type
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
