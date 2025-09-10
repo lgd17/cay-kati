@@ -173,10 +173,6 @@ bot.onText(/\/getid/, async (msg) => {
                    //=== COMMANDE /ajouter_prono ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
 
-
-// === Déclarations ===
-
-
 // --- Commande /ajouter_prono ---
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
