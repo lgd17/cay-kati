@@ -172,13 +172,13 @@ bot.onText(/\/getid/, async (msg) => {
 //=== COMMANDE /ajouter_prono ===
 
 bot.onText(/\/ajouter_prono/, (msg) => {
-  const chatId = msg.chat.id;
-  if (chatId !== ADMIN_ID)
-    return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
+  const userId = msg.from.id;
+  if (!ADMIN_IDS.includes(userId)) // Vérifie si l'utilisateur est admin
+    return bot.sendMessage(msg.chat.id, "🚫 Commande réservée à l’admin.");
 
-  pendingCoupon[chatId] = { step: "awaiting_date" };
+  pendingCoupon[msg.chat.id] = { step: "awaiting_date" };
   bot.sendMessage(
-    chatId,
+    msg.chat.id,
     "📅 Pour quelle date est ce prono ?\nEx: 2025-06-06 ou tape /today"
   );
 });
