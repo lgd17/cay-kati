@@ -124,6 +124,31 @@ bot.on("callback_query", async (query) => {
   await bot.answerCallbackQuery(query.id);
 });
 
+bot.onText(/\/admin_menu/, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (!ADMIN_IDS.includes(userId)) {
+    return bot.sendMessage(chatId, "⛔ Accès refusé, réservé à l'admin.");
+  }
+
+  bot.sendMessage(chatId, "📌 Menu Admin :", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "/admin" }],           // ✅ Vérifications
+        [{ text: "/ajouter_prono" }],   // ➕ Ajouter prono
+        [{ text: "/voir_pronos" }],     // 📋 Voir pronos
+        [{ text: "/send_coupon" }],     // 📤 Envoyer coupon
+        [{ text: "/addfixedmsg" }],     // 📝 Ajouter message fixe
+        [{ text: "/settings" }],        // ⚙️ Paramètres
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: false
+    }
+  });
+});
+
+
 // Commande pour obtenir l'ID du chat courant
 bot.onText(/\/getid/, async (msg) => {
   const chatId = msg.chat.id;
