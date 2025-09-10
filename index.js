@@ -1,7 +1,6 @@
 
 const schedule = require('node-schedule');
 const pool = require("./db");
-const bot = require("./bot");
 require("./server");
 require("./pingCron");
 require("./autoSend");
@@ -10,7 +9,7 @@ require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
-const insertManualCoupon = require('./insertManualCoupon');
+const { pool, insertManualCoupon } = require("./db");
 
 const ADMIN_ID = process.env.ADMIN_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
