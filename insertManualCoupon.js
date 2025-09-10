@@ -1,6 +1,6 @@
-// insertManualCoupon.js
-const pool = require('./db'); // ton pool PostgreSQL
-const bot = require('./bot'); // ton instance Telegram Bot
+
+const pool = require('./db'); 
+const bot = require('./bot'); 
 
 async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
