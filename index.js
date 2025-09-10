@@ -11,6 +11,7 @@ require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
 
+
 const ADMIN_ID = process.env.ADMIN_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
  
@@ -169,10 +170,8 @@ bot.onText(/\/getid/, async (msg) => {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
-//=== COMMANDE /ajouter_prono ===
+                   //=== COMMANDE /ajouter_prono ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
-
-const pendingCoupon = {}; // Stocke l'état du prono pour chaque admin
 
 // Commande pour démarrer l'ajout
 bot.onText(/\/ajouter_prono/, (msg) => {
