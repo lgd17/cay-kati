@@ -248,8 +248,8 @@ bot.on("message", async (msg) => {
     });
   }
 
-  // Étape média
-  if (state.step === "awaiting_media") {
+ // Étape média
+if (state.step === "awaiting_media") {
   let mediaUrl = null;
   let mediaType = null;
 
@@ -272,6 +272,15 @@ bot.on("message", async (msg) => {
     delete pendingCoupon[chatId];
     return;
   }
+
+  // Aucun média reconnu
+  return bot.sendMessage(
+    chatId,
+    "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.",
+    { parse_mode: "Markdown" }
+  );
+} // ← fermeture du if (state.step === "awaiting_media")
+
 
   return bot.sendMessage(chatId, "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.", { parse_mode: "Markdown" });
 }
