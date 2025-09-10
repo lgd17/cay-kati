@@ -12,8 +12,6 @@ process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
 const insertManualCoupon = require('./insertManualCoupon');
 
-setBot(bot); 
-
 const ADMIN_ID = process.env.ADMIN_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
  
@@ -177,8 +175,7 @@ bot.onText(/\/getid/, async (msg) => {
 
 
 // === Déclarations ===
-const pendingCoupon = {}; // stocke l'état du prono en cours
-const ADMIN_IDS = [/* tes ID admins */];
+
 
 // --- Commande /ajouter_prono ---
 bot.onText(/\/ajouter_prono/, (msg) => {
