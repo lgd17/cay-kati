@@ -298,30 +298,7 @@ bot.on("callback_query", async (query) => {
   await bot.answerCallbackQuery(query.id);
 });
 
-// --- Fonction d'insertion compatible PostgreSQL ---
-async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
-  try {
-    const timestamp = new Date(date); // convertit en timestamp JS
 
-    await pool.query(`
-      INSERT INTO daily_pronos (content, media_url, media_type, date, type)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [content, mediaUrl, mediaType, timestamp, type]);
-
-    // Envoi Telegram
-    if (mediaType === "photo") await bot.sendPhoto(chatId, mediaUrl, { caption: content });
-    else if (mediaType === "video") await bot.sendVideo(chatId, mediaUrl, { caption: content });
-    else if (mediaType === "voice") { await bot.sendVoice(chatId, mediaUrl); await bot.sendMessage(chatId, content); }
-    else if (mediaType === "audio") { await bot.sendAudio(chatId, mediaUrl); await bot.sendMessage(chatId, content); }
-    else await bot.sendMessage(chatId, content);
-
-    await bot.sendMessage(chatId, `✅ Coupon *${type.toUpperCase()}* ajouté pour le ${date}`, { parse_mode: "Markdown" });
-
-  } catch (err) {
-    console.error("❌ Erreur lors de l'ajout manuel :", err);
-    await bot.sendMessage(chatId, "❌ Erreur lors de l’ajout du coupon.");
-  }
-}
 
 //=== COMMANDE /voir_pronos ===
 
