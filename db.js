@@ -1,5 +1,5 @@
 
-require('dotenv').config(); 
+require('dotenv').config(); // Charger les variables .env
 const { Pool } = require('pg');
 
 // ✅ Création du pool PostgreSQL
@@ -14,4 +14,24 @@ pool.on('error', (err) => {
   process.exit(-1);
 });
 
-module.exports = pool;
+// ✅ Fonction : insérer un prono manuel dans la table daily_pronos
+async function insertManualCoupon(content, mediaUrl, mediaType, date) {
+  const query = `
+    INSERT INTO daily_pronos (content, media_url, media_type, date)
+    VALUES ($1, $2, $3, $4)
+  `;
+  const values = [content, mediaUrl, mediaType, date];
+
+  try {
+    await pool.query(query, values);
+    console.log("✅ Prono inséré avec succès.");
+  } catch (err) {
+    console.error("❌ Erreur lors de l'insertion :", err);
+  }
+}
+
+// ✅ Export unique
+module.exports = {
+  pool,
+  insertManualCoupon
+};
