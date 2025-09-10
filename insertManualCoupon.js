@@ -1,6 +1,12 @@
 require('dotenv').config();
 const pool = require('./db'); 
-const bot = require('./bot');
+
+let bot; // sera défini depuis index.js
+
+function setBot(botInstance) {
+  bot = botInstance;
+}
+
 
 // Fonction d'insertion corrigée
 async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
@@ -45,4 +51,4 @@ async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, ty
   }
 }
 
-module.exports = { insertManualCoupon };
+module.exports = { insertManualCoupon, setBot };
