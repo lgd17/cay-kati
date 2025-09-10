@@ -10,7 +10,7 @@ require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
-const { insertManualCoupon, setBot } = require('./insertManualCoupon');
+const insertManualCoupon = require('./insertManualCoupon');
 
 setBot(bot); 
 
