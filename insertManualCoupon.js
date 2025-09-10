@@ -1,5 +1,6 @@
 
 const pool = require('./db'); 
+const bot = require('./bot');
 
 async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
