@@ -314,9 +314,7 @@ bot.onText(/\/skip/, async (msg) => {
 
                     //=== COMMANDE /voir_pronos ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
-
 // --- Commande /voir_pronos ---
-
 bot.onText(/\/voir_pronos/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -372,8 +370,8 @@ bot.on("callback_query", async (query) => {
     return bot.answerCallbackQuery(query.id, { text: "⛔ Accès refusé." });
   }
 
-try {
-    // --- Supprimer un prono ---
+  try {
+    // --- Supprimer ---
     if (data.startsWith("delete_")) {
       const id = data.split("_")[1];
 
@@ -386,25 +384,21 @@ try {
         ],
       };
 
-   
-      // Pour tous les types de message, on édite si texte, sinon on envoie un nouveau message
       if (query.message.text) {
         await bot.editMessageReplyMarkup(keyboard, { chat_id: chatId, message_id: msgId });
       } else {
         await bot.sendMessage(chatId, `❌ Confirmer la suppression du prono ${id}:`, { reply_markup: keyboard });
       }
-
       return;
     }
-}
+
     // --- Confirmation suppression ---
     if (data.startsWith("confirmdelete_")) {
       const id = data.split("_")[1];
       await pool.query("DELETE FROM daily_pronos WHERE id = $1", [id]);
 
-      // Pour tous les types de message, on envoie une confirmation
       await bot.sendMessage(chatId, `✅ Prono ${id} supprimé.`);
-      try { await bot.deleteMessage(chatId, msgId); } catch (e) {} // supprime l’ancien message si possible
+      try { await bot.deleteMessage(chatId, msgId); } catch (e) {}
       return;
     }
 
@@ -422,7 +416,7 @@ try {
         pronoId: id,
         newContent: null,
         newMediaUrl: null,
-        newMediaType: null
+        newMediaType: null,
       };
       return bot.sendMessage(chatId, `✍️ Envoie le nouveau texte pour le prono ID ${id}, ou tape /cancel pour annuler.`);
     }
@@ -435,9 +429,12 @@ try {
       if (!prono) return;
 
       const caption = `🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo") await bot.sendPhoto(chatId, prono.media_url, { caption });
-      else if (prono.media_url && prono.media_type === "video") await bot.sendVideo(chatId, prono.media_url, { caption });
+      if (prono.media_url && prono.media_type === "photo")
+        await bot.sendPhoto(chatId, prono.media_url, { caption });
+      else if (prono.media_url && prono.media_type === "video")
+        await bot.sendVideo(chatId, prono.media_url, { caption });
       else await bot.sendMessage(chatId, caption);
+
       return;
     }
 
@@ -451,8 +448,10 @@ try {
       if (!CANAL_ID) return bot.sendMessage(chatId, "❌ CANAL_ID non défini.");
 
       const caption = `📢 PRONOSTIC DU JOUR\n\n🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo") await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
-      else if (prono.media_url && prono.media_type === "video") await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
+      if (prono.media_url && prono.media_type === "photo")
+        await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
+      else if (prono.media_url && prono.media_type === "video")
+        await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
       else await bot.sendMessage(CANAL_ID, caption);
 
       await bot.sendMessage(chatId, `✅ Prono ${id} publié dans le canal.`);
@@ -521,7 +520,6 @@ bot.onText(/\/skip/, async (msg) => {
   await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour (média inchangé).`);
   delete editStates[chatId];
 });
-
 
 
 
