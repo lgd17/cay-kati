@@ -1,6 +1,6 @@
 // notify_validated_users.js
 require('dotenv').config();
-const pool = require('./db'); 
+const { Pool } = require('pg');
 const TelegramBot = require('node-telegram-bot-api');
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
