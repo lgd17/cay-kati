@@ -13,7 +13,8 @@ const { pool, insertManualCoupon } = require("./db");
 
 const ADMIN_ID = process.env.ADMIN_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
- 
+const CANAL_ID = process.env.CANAL_ID;
+
 
 
 // ====== CONFIGURATION ENV ======
@@ -311,8 +312,10 @@ bot.onText(/\/skip/, async (msg) => {
   delete pendingCoupon[chatId];
 });
 
+                    //=== COMMANDE /voir_pronos ===\\
+// ====================== AJOUT MANUEL DE PRONO ======================
 
-//=== COMMANDE /voir_pronos ===
+// --- Commande /voir_pronos ---
 
 bot.onText(/\/voir_pronos/, async (msg) => {
   const chatId = msg.chat.id;
@@ -338,25 +341,16 @@ bot.onText(/\/voir_pronos/, async (msg) => {
             { text: "🗑️ Supprimer", callback_data: `delete_${row.id}` },
           ],
           [
-            {
-              text: "🚀 Publier maintenant",
-              callback_data: `postnow_${row.id}`,
-            },
+            { text: "🚀 Publier maintenant", callback_data: `postnow_${row.id}` },
             { text: "🧪 Tester", callback_data: `test_${row.id}` },
           ],
         ],
       };
 
       if (row.media_url && row.media_type === "photo") {
-        await bot.sendPhoto(chatId, row.media_url, {
-          caption,
-          reply_markup: keyboard,
-        });
+        await bot.sendPhoto(chatId, row.media_url, { caption, reply_markup: keyboard });
       } else if (row.media_url && row.media_type === "video") {
-        await bot.sendVideo(chatId, row.media_url, {
-          caption,
-          reply_markup: keyboard,
-        });
+        await bot.sendVideo(chatId, row.media_url, { caption, reply_markup: keyboard });
       } else {
         await bot.sendMessage(chatId, caption, { reply_markup: keyboard });
       }
@@ -367,7 +361,7 @@ bot.onText(/\/voir_pronos/, async (msg) => {
   }
 });
 
-// ✅ Callback général centralisé
+// --- Callback général ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const userId = query.from.id;
@@ -379,116 +373,155 @@ bot.on("callback_query", async (query) => {
   }
 
   try {
+    // --- Supprimer ---
     if (data.startsWith("delete_")) {
       const id = data.split("_")[1];
       await bot.editMessageReplyMarkup(
-        {
-          inline_keyboard: [
-            [
-              { text: "✅ Confirmer", callback_data: `confirmdelete_${id}` },
-              { text: "❌ Annuler", callback_data: `cancel` },
-            ],
-          ],
-        },
+        { inline_keyboard: [[
+          { text: "✅ Confirmer", callback_data: `confirmdelete_${id}` },
+          { text: "❌ Annuler", callback_data: `cancel` },
+        ]] },
         { chat_id: chatId, message_id: msgId }
       );
       return;
     }
 
+   
+      // Pour tous les types de message, on édite si texte, sinon on envoie un nouveau message
+      if (query.message.text) {
+        await bot.editMessageReplyMarkup(keyboard, { chat_id: chatId, message_id: msgId });
+      } else {
+        await bot.sendMessage(chatId, `❌ Confirmer la suppression du prono ${id}:`, { reply_markup: keyboard });
+      }
+
+      return;
+    }
+
+    // --- Confirmation suppression ---
     if (data.startsWith("confirmdelete_")) {
       const id = data.split("_")[1];
       await pool.query("DELETE FROM daily_pronos WHERE id = $1", [id]);
-      await bot.editMessageText(`✅ Prono ${id} supprimé.`, {
-        chat_id: chatId,
-        message_id: msgId,
-      });
+
+      // Pour tous les types de message, on envoie une confirmation
+      await bot.sendMessage(chatId, `✅ Prono ${id} supprimé.`);
+      try { await bot.deleteMessage(chatId, msgId); } catch (e) {} // supprime l’ancien message si possible
       return;
     }
 
+    // --- Annulation ---
     if (data === "cancel") {
-      await bot.editMessageReplyMarkup(
-        { inline_keyboard: [] },
-        { chat_id: chatId, message_id: msgId }
-      );
+      try { await bot.deleteMessage(chatId, msgId); } catch (e) {}
       return;
     }
 
+    // --- Editer ---
     if (data.startsWith("edit_")) {
       const id = data.split("_")[1];
-      editStates[chatId] = { step: "editing", pronoId: id };
-      await bot.sendMessage(
-        chatId,
-        `✍️ Envoie le nouveau texte pour le prono ID ${id}, ou tape /cancel pour annuler.`
-      );
-      return;
+      editStates[chatId] = {
+        step: "edit_text",
+        pronoId: id,
+        newContent: null,
+        newMediaUrl: null,
+        newMediaType: null
+      };
+      return bot.sendMessage(chatId, `✍️ Envoie le nouveau texte pour le prono ID ${id}, ou tape /cancel pour annuler.`);
     }
 
+    // --- Tester ---
     if (data.startsWith("test_")) {
       const id = data.split("_")[1];
-      const { rows } = await pool.query(
-        "SELECT * FROM daily_pronos WHERE id = $1",
-        [id]
-      );
+      const { rows } = await pool.query("SELECT * FROM daily_pronos WHERE id = $1", [id]);
       const prono = rows[0];
       if (!prono) return;
 
       const caption = `🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo") {
-        await bot.sendPhoto(chatId, prono.media_url, { caption });
-      } else if (prono.media_url && prono.media_type === "video") {
-        await bot.sendVideo(chatId, prono.media_url, { caption });
-      } else {
-        await bot.sendMessage(chatId, caption);
-      }
+      if (prono.media_url && prono.media_type === "photo") await bot.sendPhoto(chatId, prono.media_url, { caption });
+      else if (prono.media_url && prono.media_type === "video") await bot.sendVideo(chatId, prono.media_url, { caption });
+      else await bot.sendMessage(chatId, caption);
       return;
     }
 
+    // --- Publier maintenant ---
     if (data.startsWith("postnow_")) {
       const id = data.split("_")[1];
-      const { rows } = await pool.query(
-        "SELECT * FROM daily_pronos WHERE id = $1",
-        [id]
-      );
+      const { rows } = await pool.query("SELECT * FROM daily_pronos WHERE id = $1", [id]);
       const prono = rows[0];
       if (!prono) return;
 
+      if (!CANAL_ID) return bot.sendMessage(chatId, "❌ CANAL_ID non défini.");
+
       const caption = `📢 PRONOSTIC DU JOUR\n\n🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo") {
-        await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
-      } else if (prono.media_url && prono.media_type === "video") {
-        await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
-      } else {
-        await bot.sendMessage(CANAL_ID, caption);
-      }
+      if (prono.media_url && prono.media_type === "photo") await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
+      else if (prono.media_url && prono.media_type === "video") await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
+      else await bot.sendMessage(CANAL_ID, caption);
+
       await bot.sendMessage(chatId, `✅ Prono ${id} publié dans le canal.`);
       return;
     }
 
-    if (data === "confirm_prono") {
-      if (pendingCoupon[chatId]) {
-        pendingCoupon[chatId].step = "awaiting_media";
-        await bot.sendMessage(
-          chatId,
-          "📎 Envoie une *photo* ou *vidéo* ou tape /skip.",
-          { parse_mode: "Markdown" }
-        );
-      }
-      return;
-    }
+    await bot.answerCallbackQuery(query.id);
 
-    if (data === "cancel_prono") {
-      delete pendingCoupon[chatId];
-      await bot.sendMessage(chatId, "❌ Ajout du prono annulé.");
-      return;
-    }
-
-    // ✅ Pour toute autre donnée inconnue => ne rien faire, ignorer
-    return;
   } catch (err) {
     console.error("Erreur callback:", err);
     bot.sendMessage(chatId, "❌ Une erreur est survenue.");
   }
 });
+
+// --- Gestion messages pour édition ---
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const state = editStates[chatId];
+  if (!state) return;
+
+  // --- Étape texte ---
+  if (state.step === "edit_text" && msg.text && !msg.text.startsWith("/")) {
+    state.newContent = msg.text;
+    state.step = "edit_media";
+
+    return bot.sendMessage(chatId, "📎 Envoie un nouveau média (*photo*, *vidéo*, *note vocale*, *audio*) ou tape /skip pour garder l'ancien.", { parse_mode: "Markdown" });
+  }
+
+  // --- Étape média ---
+  if (state.step === "edit_media") {
+    let mediaUrl = null;
+    let mediaType = null;
+
+    if (msg.photo) { mediaUrl = msg.photo.at(-1).file_id; mediaType = "photo"; }
+    else if (msg.video) { mediaUrl = msg.video.file_id; mediaType = "video"; }
+    else if (msg.voice) { mediaUrl = msg.voice.file_id; mediaType = "voice"; }
+    else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
+
+    if (mediaUrl) {
+      state.newMediaUrl = mediaUrl;
+      state.newMediaType = mediaType;
+    }
+
+    const queryText = `
+      UPDATE daily_pronos
+      SET content = $1,
+          media_url = COALESCE($2, media_url),
+          media_type = COALESCE($3, media_type)
+      WHERE id = $4
+    `;
+    await pool.query(queryText, [state.newContent, state.newMediaUrl, state.newMediaType, state.pronoId]);
+
+    await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour avec succès.`);
+    delete editStates[chatId];
+  }
+});
+
+// --- Commande /skip pour édition média ---
+bot.onText(/\/skip/, async (msg) => {
+  const chatId = msg.chat.id;
+  const state = editStates[chatId];
+  if (!state || state.step !== "edit_media") return;
+
+  await pool.query("UPDATE daily_pronos SET content = $1 WHERE id = $2", [state.newContent, state.pronoId]);
+
+  await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour (média inchangé).`);
+  delete editStates[chatId];
+});
+
 
 
 
