@@ -1,6 +1,6 @@
 
 const schedule = require('node-schedule');
-const pool = require("./db");
+const bot = require("./bot");
 require("./server");
 require("./pingCron");
 require("./autoSend");
