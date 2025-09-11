@@ -176,73 +176,71 @@ bot.onText(/\/getid/, async (msg) => {
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-
   if (!ADMIN_IDS.includes(userId))
     return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
 
-  pendingCoupon[chatId] = { step: "awaiting_date" };
+  pendingCoupon[chatId] = {
+    step: "awaiting_date",
+    content: "",
+    date: null,
+    mediaType: null,
+    type: "gratuit",
+    mediaUrl: null
+  };
+
   bot.sendMessage(chatId, "📅 Pour quelle date est ce prono ? Ex: 2025-09-10 ou tape /today");
 });
 
-// --- Commande /today ---
+// --- /today ---
 bot.onText(/\/today/, (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
   if (!state || state.step !== "awaiting_date") return;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  today.setUTCHours(0,0,0,0);
   state.date = today;
   state.step = "awaiting_content";
+
   bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
 });
 
-// --- Commande /skip (ignorer le média) ---
-bot.onText(/\/skip/, async (msg) => {
-  const chatId = msg.chat.id;
-  const state = pendingCoupon[chatId];
-  if (!state || state.step !== "awaiting_media") return;
-
-  await insertManualCoupon(chatId, state.content, null, null, state.date, state.type);
-  delete pendingCoupon[chatId];
-});
-
-// --- Gestion des messages ---
+// --- Gestion messages ---
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
   if (!state || msg.text?.startsWith("/")) return;
 
-  // --- Étape Date ---
+  // --- Date ---
   if (state.step === "awaiting_date" && /^\d{4}-\d{2}-\d{2}$/.test(msg.text)) {
-    const inputDate = new Date(msg.text);
+    const inputDate = new Date(msg.text + "T00:00:00Z");
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (inputDate < today)
-      return bot.sendMessage(chatId, "❌ La date ne peut pas être dans le passé. Réessaie.");
+    today.setUTCHours(0,0,0,0);
+    if (inputDate < today) return bot.sendMessage(chatId, "❌ La date ne peut pas être dans le passé.");
 
-    state.date = msg.text;
+    state.date = inputDate;
     state.step = "awaiting_content";
     return bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
   }
 
-  // --- Étape Contenu ---
+  // --- Contenu ---
   if (state.step === "awaiting_content") {
     state.content = msg.text;
     state.step = "awaiting_confirmation";
 
-    const recap = `📝 *Récapitulatif du prono:*\n📅 Date: *${state.date}*\n✍️ Contenu: *${state.content}*\n\nSouhaites-tu continuer ?`;
+    const recap = `📝 *Récapitulatif du prono:*\n📅 Date: *${state.date.toISOString().slice(0,10)}*\n✍️ Contenu: *${state.content}*\n\nSouhaites-tu continuer ?`;
     return bot.sendMessage(chatId, recap, {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [{ text: "✅ Confirmer", callback_data: "confirm_prono" }],
-          [{ text: "❌ Annuler", callback_data: "cancel_prono" }],
-        ],
-      },
+          [{ text: "❌ Annuler", callback_data: "cancel_prono" }]
+        ]
+      }
     });
   }
 
-  // --- Étape Média ---
+  // --- Média ---
   if (state.step === "awaiting_media") {
     let mediaUrl = null;
     let mediaType = null;
@@ -253,7 +251,13 @@ bot.on("message", async (msg) => {
     else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
 
     if (mediaUrl) {
-      await insertManualCoupon(chatId, state.content, mediaUrl, mediaType, state.date, state.type);
+      state.mediaUrl = mediaUrl;
+      state.mediaType = mediaType;
+
+      const result = await insertManualCoupon(state.content, state.mediaUrl, state.mediaType, state.date, state.type);
+      if (result.success) await bot.sendMessage(chatId, `✅ Coupon *${state.type.toUpperCase()}* ajouté pour le ${state.date.toISOString().slice(0,10)}`, { parse_mode: "Markdown" });
+      else await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+
       delete pendingCoupon[chatId];
       return;
     }
@@ -262,41 +266,50 @@ bot.on("message", async (msg) => {
   }
 });
 
-// --- Gestion des boutons inline (confirm / cancel / type) ---
+// --- Boutons inline ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const state = pendingCoupon[chatId];
   if (!state) return bot.answerCallbackQuery(query.id);
 
-  // --- Confirmation ---
   if (query.data === "confirm_prono") {
     state.step = "awaiting_type";
     await bot.sendMessage(chatId, "🎯 Choisis le type de prono :", {
       reply_markup: {
         inline_keyboard: [
           [{ text: "Gratuit", callback_data: "type_gratuit" }],
-          [{ text: "Premium", callback_data: "type_premium" }],
-        ],
-      },
+          [{ text: "Premium", callback_data: "type_premium" }]
+        ]
+      }
     });
   }
 
-  // --- Annulation ---
   if (query.data === "cancel_prono") {
     delete pendingCoupon[chatId];
     await bot.sendMessage(chatId, "❌ Ajout du prono annulé.");
   }
 
-  // --- Choix du type ---
   if (state.step === "awaiting_type" && (query.data === "type_gratuit" || query.data === "type_premium")) {
     state.type = query.data === "type_gratuit" ? "gratuit" : "premium";
     state.step = "awaiting_media";
-    await bot.sendMessage(chatId, "📎 Tu peux maintenant envoyer une *photo*, *vidéo*, *note vocale* ou *audio* pour ce prono.\nSinon tape /skip.", { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📎 Envoie maintenant une *photo*, *vidéo*, *note vocale* ou *audio* pour ce prono, ou tape /skip.", { parse_mode: "Markdown" });
   }
 
   await bot.answerCallbackQuery(query.id);
 });
 
+// --- /skip ---
+bot.onText(/\/skip/, async (msg) => {
+  const chatId = msg.chat.id;
+  const state = pendingCoupon[chatId];
+  if (!state || state.step !== "awaiting_media") return;
+
+  const result = await insertManualCoupon(state.content, null, null, state.date, state.type);
+  if (result.success) await bot.sendMessage(chatId, `✅ Coupon *${state.type.toUpperCase()}* ajouté pour le ${state.date.toISOString().slice(0,10)}`, { parse_mode: "Markdown" });
+  else await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+
+  delete pendingCoupon[chatId];
+});
 
 
 //=== COMMANDE /voir_pronos ===
