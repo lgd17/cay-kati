@@ -1,5 +1,5 @@
 require("dotenv").config();
-const pool = require('./db'); 
+const { Pool } = require('pg'); 
 const moment = require("moment-timezone");
 
 async function sendFixedMessagesDaily() {
