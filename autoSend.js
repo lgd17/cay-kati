@@ -1,4 +1,4 @@
-const { Pool } = require('pg');
+const { pool } = require("./db");
 const { bot } = require('./bot');
 const moment = require('moment-timezone');
 const cron = require('node-cron');
