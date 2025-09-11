@@ -12,14 +12,14 @@ pool.on('error', (err) => {
   process.exit(-1);
 });
 
-// ✅ Fonction d'insertion
 async function insertManualCoupon(content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
+    // Si l’admin envoie juste "2025-09-11", on le transforme en minuit UTC
     const timestamp = new Date(date);
 
     await pool.query(`
-      INSERT INTO daily_pronos (content, media_url, media_type, date, date_only, type)
-      VALUES ($1, $2, $3, $4, $4::date, $5)
+      INSERT INTO daily_pronos (content, media_url, media_type, date, type)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (date) DO UPDATE
       SET content = EXCLUDED.content,
           media_url = EXCLUDED.media_url,
@@ -33,5 +33,6 @@ async function insertManualCoupon(content, mediaUrl, mediaType, date, type = "gr
     return { success: false, error: err };
   }
 }
+
 
 module.exports = { pool, insertManualCoupon };
