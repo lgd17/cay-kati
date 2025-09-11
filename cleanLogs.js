@@ -1,6 +1,6 @@
 const schedule = require('node-schedule');
 const moment = require('moment-timezone');
-const { Pool } = require('pg'); 
+const { pool } = require("./db");
 const { bot } = require('./bot');
 const ADMIN_ID = process.env.ADMIN_ID;
 
