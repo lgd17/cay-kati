@@ -137,7 +137,7 @@ bot.onText(/\/admin_menu/, (msg) => {
     reply_markup: {
       keyboard: [
         [{ text: "/admin" }],           // ✅ Vérifications
-        [{ text: "/ajouter_prono" }],   // ➕ Ajouter prono
+        [{ text: "/ajouter_prono" }, { text: "/fixedmenu" } ],   // ➕ Ajouter prono
         [{ text: "/voir_pronos" }],     // 📋 Voir pronos
         [{ text: "/send_coupon" }],     // 📤 Envoyer coupon
         [{ text: "/addfixedmsg" }],     // 📝 Ajouter message fixe
