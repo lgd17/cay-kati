@@ -1,5 +1,4 @@
-
-require('dotenv').config(); // Charger les variables .env
+require('dotenv').config();
 const { Pool } = require('pg');
 
 // ✅ Création du pool PostgreSQL
@@ -8,16 +7,14 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ✅ Gestion des erreurs côté base
 pool.on('error', (err) => {
   console.error('❌ Erreur inattendue côté PostgreSQL :', err);
   process.exit(-1);
 });
 
-// Fonction d'insertion corrigée
-async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, type = "gratuit") {
+// ✅ Fonction d'insertion
+async function insertManualCoupon(content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
-    // Convertir la date en JS Date
     const timestamp = new Date(date);
 
     await pool.query(`
@@ -30,36 +27,11 @@ async function insertManualCoupon(chatId, content, mediaUrl, mediaType, date, ty
           type = EXCLUDED.type
     `, [content, mediaUrl, mediaType, timestamp, type]);
 
-    // Envoi dans Telegram
-    if (!bot) throw new Error("Bot non défini");
-
-    if (mediaType === 'photo') {
-      await bot.sendPhoto(chatId, mediaUrl, { caption: content });
-    } else if (mediaType === 'video') {
-      await bot.sendVideo(chatId, mediaUrl, { caption: content });
-    } else if (mediaType === 'voice') {
-      await bot.sendVoice(chatId, mediaUrl);
-      await bot.sendMessage(chatId, content);
-    } else if (mediaType === 'audio') {
-      await bot.sendAudio(chatId, mediaUrl);
-      await bot.sendMessage(chatId, content);
-    } else {
-      await bot.sendMessage(chatId, content);
-    }
-
-    await bot.sendMessage(chatId, `✅ Coupon *${type.toUpperCase()}* ajouté pour le ${date}`, {
-      parse_mode: "Markdown"
-    });
-
+    return { success: true };
   } catch (err) {
     console.error("❌ Erreur lors de l'ajout manuel :", err);
-    if (bot) await bot.sendMessage(chatId, "❌ Erreur lors de l’ajout du coupon.");
+    return { success: false, error: err };
   }
 }
 
-
-// ✅ Export unique
-module.exports = {
-  pool,
-  insertManualCoupon
-};
+module.exports = { pool, insertManualCoupon };
