@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-// ✅ Création du pool PostgreSQL
+// Création du pool PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -12,15 +12,29 @@ pool.on('error', (err) => {
   process.exit(-1);
 });
 
+// --- Fonction d'insertion sécurisée ---
 async function insertManualCoupon(content, mediaUrl, mediaType, date, type = "gratuit") {
   try {
-    // Si l’admin envoie juste "2025-09-11", on le transforme en minuit UTC
-    const timestamp = new Date(date);
+    // --- Vérification et conversion de la date ---
+    if (!date) throw new Error("Date manquante");
 
+    // Toujours créer un timestamp valide UTC pour PostgreSQL
+    let timestamp;
+    if (date instanceof Date) {
+      timestamp = date;
+    } else {
+      timestamp = new Date(date);
+    }
+
+    if (isNaN(timestamp.getTime())) {
+      throw new Error("Date invalide : " + date);
+    }
+
+    // --- Insertion avec UPSERT sur date_only (1 prono par jour) ---
     await pool.query(`
       INSERT INTO daily_pronos (content, media_url, media_type, date, type)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (date) DO UPDATE
+      ON CONFLICT (date_only) DO UPDATE
       SET content = EXCLUDED.content,
           media_url = EXCLUDED.media_url,
           media_type = EXCLUDED.media_type,
@@ -34,5 +48,7 @@ async function insertManualCoupon(content, mediaUrl, mediaType, date, type = "gr
   }
 }
 
-
-module.exports = { pool, insertManualCoupon };
+module.exports = {
+  pool,
+  insertManualCoupon
+};
