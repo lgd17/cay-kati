@@ -372,19 +372,19 @@ bot.on("callback_query", async (query) => {
     return bot.answerCallbackQuery(query.id, { text: "⛔ Accès refusé." });
   }
 
-  try {
-    // --- Supprimer ---
+try {
+    // --- Supprimer un prono ---
     if (data.startsWith("delete_")) {
       const id = data.split("_")[1];
-      await bot.editMessageReplyMarkup(
-        { inline_keyboard: [[
-          { text: "✅ Confirmer", callback_data: `confirmdelete_${id}` },
-          { text: "❌ Annuler", callback_data: `cancel` },
-        ]] },
-        { chat_id: chatId, message_id: msgId }
-      );
-      return;
-    }
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirmer", callback_data: `confirmdelete_${id}` },
+            { text: "❌ Annuler", callback_data: `cancel` },
+          ],
+        ],
+      };
 
    
       // Pour tous les types de message, on édite si texte, sinon on envoie un nouveau message
@@ -396,7 +396,7 @@ bot.on("callback_query", async (query) => {
 
       return;
     }
-
+}
     // --- Confirmation suppression ---
     if (data.startsWith("confirmdelete_")) {
       const id = data.split("_")[1];
