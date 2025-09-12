@@ -4,18 +4,21 @@ const bot = require("./bot");
 require("./server");
 require("./pingCron");
 require("./autoSend");
+require("./autoSender");
+require('./cleanLogs');
 const { ping } = require("./pingServer")
-require('./cleanLogs'); // ⬅️ S'il est dans cleanLogs.js
+
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
 const { pool, insertManualCoupon } = require("./db");
 
 const ADMIN_ID = process.env.ADMIN_ID;
-const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
+
 const CANAL_ID = process.env.CANAL_ID;
-
-
+const adminId = process.env.TELEGRAM_ADMIN_ID;
+const channelId = process.env.TELEGRAM_CHANNEL_ID;
+const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
 // ====== CONFIGURATION ENV ======
 const port = process.env.PORT || 3000;
@@ -35,8 +38,7 @@ const fixedAddStates = {};
 const fixedEditStates = {};
 const editStates = {};
 
-const adminId = process.env.TELEGRAM_ADMIN_ID;
-const channelId = process.env.TELEGRAM_CHANNEL_ID;
+
 
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -136,12 +138,12 @@ bot.onText(/\/admin_menu/, (msg) => {
   bot.sendMessage(chatId, "📌 Menu Admin :", {
     reply_markup: {
       keyboard: [
-        [{ text: "/admin" }],           // ✅ Vérifications
-        [{ text: "/ajouter_prono" }, { text: "/fixedmenu" } ],   // ➕ Ajouter prono
-        [{ text: "/voir_pronos" }],     // 📋 Voir pronos
-        [{ text: "/send_coupon" }],     // 📤 Envoyer coupon
-        [{ text: "/addfixedmsg" }],     // 📝 Ajouter message fixe
-        [{ text: "/settings" }],        // ⚙️ Paramètres
+        [{ text: "/admin" }],          
+        [{ text: "/ajouter_prono" }, { text: "/voir_pronos" }],   
+        [{ text: "/addfixedmsg" }, { text:  "/fixedmenu" }],     
+        [{ text: "/addmsg" }, { text: "/listmsg"}],     
+        [{ text: "/addfixedmsg" }],     
+        [{ text: "/settings" }],        
       ],
       resize_keyboard: true,
       one_time_keyboard: false
@@ -983,144 +985,17 @@ bot.on("callback_query", async (query) => {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
-// LIRE_MESSAGE-AUTO
-bot.onText(/\/listmsg/, async (msg) => {
-  if (msg.from.id.toString() !== adminId) {
-    return bot.sendMessage(
-      msg.chat.id,
-      "⛔ Tu n'es pas autorisé à voir cette liste."
-    );
-  }
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, contenu, send_date, media_url FROM messages_auto
-       WHERE send_date::date = CURRENT_DATE
-       ORDER BY send_date ASC`
-    );
-
-    if (rows.length === 0) {
-      return bot.sendMessage(
-        msg.chat.id,
-        "📭 Aucun message prévu pour aujourd’hui."
-      );
-    }
-
-    let response = `📋 *Messages programmés aujourd’hui*:\n\n`;
-
-    for (const row of rows) {
-      const shortText =
-        row.contenu.length > 25 ? row.contenu.slice(0, 25) + "…" : row.contenu;
-      const heure = dayjs(row.send_date).format("HH:mm");
-      response += `🆔 ${row.id} | 🕒 ${heure} | ${
-        row.media_url ? "📎 Media" : "📝 Texte"
-      }\n➡️ ${shortText}\n\n`;
-    }
-
-    bot.sendMessage(msg.chat.id, response, { parse_mode: "Markdown" });
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(
-      msg.chat.id,
-      "❌ Erreur lors de la récupération des messages."
-    );
-  }
-});
-
-/////////////////////////////////////////////////////////////////////////////////////////
-
-// SUPPRIMÉ MESSAGE PROGRAMME
-const pendingDeletions = new Map(); // Pour suivre les demandes de suppression en attente
-
-bot.onText(/\/delmsg (\d+)/, async (msg, match) => {
-  const userId = msg.from.id.toString();
-  const messageId = match[1];
-
-  if (userId !== adminId) {
-    return bot.sendMessage(msg.chat.id, "⛔ Tu n'es pas autorisé à faire ça.");
-  }
-
-  // Vérifie si l'ID existe
-  const { rows } = await pool.query(
-    "SELECT * FROM messages_auto WHERE id = $1",
-    [messageId]
-  );
-  if (rows.length === 0) {
-    return bot.sendMessage(
-      msg.chat.id,
-      `❌ Aucun message trouvé avec l’ID ${messageId}.`
-    );
-  }
-
-  // Stocke la demande en attente
-  pendingDeletions.set(userId, messageId);
-
-  bot.sendMessage(
-    msg.chat.id,
-    `🗑️ Es-tu sûr de vouloir supprimer le message ID ${messageId} ?`,
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "✅ Confirmer", callback_data: "confirm_delete" },
-            { text: "❌ Annuler", callback_data: "cancel_delete" },
-          ],
-        ],
-      },
-    }
-  );
-});
-
-// RÉPONSE OUI/NON
-bot.on("callback_query", async (query) => {
-  const userId = query.from.id.toString();
-  const action = query.data;
-  const chatId = query.message.chat.id;
-
-  if (!pendingDeletions.has(userId)) {
-    return bot.answerCallbackQuery(query.id, {
-      text: "Aucune suppression en attente.",
-    });
-  }
-
-  const messageId = pendingDeletions.get(userId);
-
-  if (action === "confirm_delete") {
-    try {
-      await pool.query("DELETE FROM messages_auto WHERE id = $1", [messageId]);
-      pendingDeletions.delete(userId);
-
-      await bot.editMessageText(
-        `✅ Message ID ${messageId} supprimé avec succès.`,
-        {
-          chat_id: chatId,
-          message_id: query.message.message_id,
-        }
-      );
-    } catch (err) {
-      console.error(err);
-      await bot.sendMessage(
-        chatId,
-        "❌ Une erreur est survenue pendant la suppression."
-      );
-    }
-  } else if (action === "cancel_delete") {
-    pendingDeletions.delete(userId);
-    await bot.editMessageText("❌ Suppression annulée.", {
-      chat_id: chatId,
-      message_id: query.message.message_id,
-    });
-  }
-
-  bot.answerCallbackQuery(query.id); // Pour faire disparaître le loading
-});
-
-
-/////////////////////////////////////////////////////////////////////////////////////////
-
+//////////////////////////////////////////////////
 
 const { Client } = require("pg");
 const dayjs = require("dayjs");
+
+
+
+                        //=== COMMANDE /addmsg ===\\
+// ====================== AJOUT MANUEL DE MESSAGE ======================
+
+// --- Commande /addmsg ---
 
 bot.onText(/\/addmsg/, (msg) => {
   if (msg.from.id.toString() !== adminId) {
@@ -1128,31 +1003,28 @@ bot.onText(/\/addmsg/, (msg) => {
   }
 
   userStates[msg.from.id] = { step: 1 };
-  bot.sendMessage(
-    msg.chat.id,
-    "✏️ Envoie le **contenu du message** à programmer."
-  );
+  bot.sendMessage(msg.chat.id, "✏️ Envoie le **contenu du message** à programmer.");
 });
 
+// --- Gestion des étapes ---
 bot.on("message", async (msg) => {
   const userId = msg.from.id;
   const state = userStates[userId];
-
   if (!state || msg.text?.startsWith("/")) return;
 
   const chatId = msg.chat.id;
 
-  // Étape 1 : contenu texte
+  // --- Étape 1 : texte ---
   if (state.step === 1) {
     state.contenu = msg.text;
     state.step = 2;
     return bot.sendMessage(
       chatId,
-      "📎 Envoie un **média** (image, vidéo, audio, voice) OU tape `non` si tu n'en veux pas."
+      "📎 Envoie un **média** (image, vidéo, audio, vocal, vidéo ronde) OU tape `non` si tu n'en veux pas."
     );
   }
 
-  // Étape 2 : média ou 'non'
+  // --- Étape 2 : média ---
   if (state.step === 2) {
     if (msg.text && msg.text.toLowerCase() === "non") {
       state.media_url = null;
@@ -1170,13 +1042,16 @@ bot.on("message", async (msg) => {
     } else if (msg.audio) {
       state.media_url = msg.audio.file_id;
       state.media_type = "audio";
+    } else if (msg.video_note) {
+      state.media_url = msg.video_note.file_id;
+      state.media_type = "video_note";
     } else if (msg.text && msg.text.startsWith("http")) {
       state.media_url = msg.text;
-      state.media_type = null; // Lien direct, type inconnu
+      state.media_type = "url"; // lien externe
     } else {
       return bot.sendMessage(
         chatId,
-        "⛔ Format non reconnu. Envoie une image, une vidéo, un audio, un vocal ou tape `non`."
+        "⛔ Format non reconnu. Envoie une photo, une vidéo, un vocal, un audio, une vidéo ronde ou tape `non`."
       );
     }
 
@@ -1187,7 +1062,7 @@ bot.on("message", async (msg) => {
     );
   }
 
-  // Étape 3 : heure d’envoi
+  // --- Étape 3 : heure ---
   if (state.step === 3) {
     const timeInput = msg.text.trim();
     const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
@@ -1222,15 +1097,218 @@ bot.on("message", async (msg) => {
       await bot.sendMessage(chatId, resume);
     } catch (err) {
       console.error(err);
-      await bot.sendMessage(
-        chatId,
-        "❌ Erreur lors de l'enregistrement du message."
-      );
+      await bot.sendMessage(chatId, "❌ Erreur lors de l'enregistrement du message.");
     }
 
     delete userStates[userId];
   }
 });
+
+// --- Fonction d’envoi automatique ---
+async function envoyerMessage(programme) {
+  try {
+    if (programme.media_type === "photo") {
+      await bot.sendPhoto(CANAL_ID, programme.media_url, { caption: programme.contenu });
+    } else if (programme.media_type === "video") {
+      await bot.sendVideo(CANAL_ID, programme.media_url, { caption: programme.contenu });
+    } else if (programme.media_type === "voice") {
+      await bot.sendVoice(CANAL_ID, programme.media_url, { caption: programme.contenu });
+    } else if (programme.media_type === "audio") {
+      await bot.sendAudio(CANAL_ID, programme.media_url, { caption: programme.contenu });
+    } else if (programme.media_type === "video_note") {
+      await bot.sendVideoNote(CANAL_ID, programme.media_url); // ⚡ vidéo ronde
+    } else if (programme.media_type === "url") {
+      await bot.sendMessage(CANAL_ID, `${programme.contenu}\n🔗 ${programme.media_url}`);
+    } else {
+      await bot.sendMessage(CANAL_ID, programme.contenu);
+    }
+  } catch (err) {
+    console.error("❌ Erreur envoi automatique:", err);
+  }
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+                        //=== COMMANDE /listmsg ===\\
+// ====================== LISTES DES MESSAGES-AUTO ======================
+
+
+// --- Commande /listmsgs ---
+bot.onText(/\/listmsgs/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (userId.toString() !== adminId) {
+    return bot.sendMessage(chatId, "⛔ Accès réservé à l'admin.");
+  }
+
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM messages_auto ORDER BY id DESC LIMIT 10"
+    );
+
+    if (rows.length === 0) {
+      return bot.sendMessage(chatId, "📭 Aucun message programmé trouvé.");
+    }
+
+    for (const row of rows) {
+      const caption = `🆔 ${row.id}\n🕒 ${dayjs(row.send_date).format("HH:mm DD/MM/YYYY")}\n📝 ${row.contenu || row.media_text || ""}\n🎞 Média : ${row.media_type || "Aucun"}${row.media_url && !row.media_type ? `\n🔗 URL : ${row.media_url}` : ""}`;
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: "✏️ Modifier", callback_data: `editmsg_${row.id}` },
+            { text: "🗑️ Supprimer", callback_data: `deletemsg_${row.id}` },
+          ],
+          [{ text: "🧪 Tester", callback_data: `testmsg_${row.id}` }],
+        ],
+      };
+
+      if (row.media_url && row.media_type === "photo") await bot.sendPhoto(chatId, row.media_url, { caption, reply_markup: keyboard });
+      else if (row.media_url && row.media_type === "video") await bot.sendVideo(chatId, row.media_url, { caption, reply_markup: keyboard });
+      else if (row.media_url && row.media_type === "voice") await bot.sendVoice(chatId, row.media_url, { caption, reply_markup: keyboard });
+      else if (row.media_url && row.media_type === "audio") await bot.sendAudio(chatId, row.media_url, { caption, reply_markup: keyboard });
+      else if (row.media_url && row.media_type === "video_note") await bot.sendVideoNote(chatId, row.media_url, { reply_markup: keyboard });
+      else await bot.sendMessage(chatId, caption, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("Erreur /listmsgs:", err);
+    bot.sendMessage(chatId, "❌ Une erreur est survenue lors de la récupération des messages.");
+  }
+});
+
+// --- Callback général pour /listmsgs ---
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const userId = query.from.id;
+  const data = query.data;
+  const msgId = query.message.message_id;
+
+  if (userId.toString() !== adminId) {
+    return bot.answerCallbackQuery(query.id, { text: "⛔ Accès refusé." });
+  }
+
+  try {
+    // --- Supprimer ---
+    if (data.startsWith("deletemsg_")) {
+      const id = data.split("_")[1];
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirmer", callback_data: `confirmdeletemsg_${id}` },
+            { text: "❌ Annuler", callback_data: "cancelmsg" },
+          ],
+        ],
+      };
+      await bot.editMessageReplyMarkup(keyboard, { chat_id: chatId, message_id: msgId });
+      return;
+    }
+
+    if (data.startsWith("confirmdeletemsg_")) {
+      const id = data.split("_")[1];
+      await pool.query("DELETE FROM messages_auto WHERE id = $1", [id]);
+      await bot.sendMessage(chatId, `✅ Message ID ${id} supprimé.`);
+      try { await bot.deleteMessage(chatId, msgId); } catch (e) {}
+      return;
+    }
+
+    if (data === "cancelmsg") {
+      try { await bot.deleteMessage(chatId, msgId); } catch (e) {}
+      return;
+    }
+
+    // --- Tester ---
+    if (data.startsWith("testmsg_")) {
+      const id = data.split("_")[1];
+      const { rows } = await pool.query("SELECT * FROM messages_auto WHERE id = $1", [id]);
+      const msgData = rows[0];
+      if (!msgData) return;
+
+      const caption = msgData.contenu || msgData.media_text || "";
+
+      if (msgData.media_url && msgData.media_type === "photo") await bot.sendPhoto(chatId, msgData.media_url, { caption });
+      else if (msgData.media_url && msgData.media_type === "video") await bot.sendVideo(chatId, msgData.media_url, { caption });
+      else if (msgData.media_url && msgData.media_type === "voice") await bot.sendVoice(chatId, msgData.media_url, { caption });
+      else if (msgData.media_url && msgData.media_type === "audio") await bot.sendAudio(chatId, msgData.media_url, { caption });
+      else if (msgData.media_url && msgData.media_type === "video_note") await bot.sendVideoNote(chatId, msgData.media_url);
+      else if (msgData.media_url && !msgData.media_type) await bot.sendMessage(chatId, `🔗 Lien : ${msgData.media_url}\n${caption}`);
+      else await bot.sendMessage(chatId, caption);
+      return;
+    }
+
+    // --- Modifier (texte / média / URL) ---
+    if (data.startsWith("editmsg_")) {
+      const id = data.split("_")[1];
+      editStates[chatId] = { step: "edit_text", msgId: id, newContent: null, newMediaUrl: null, newMediaType: null };
+      return bot.sendMessage(chatId, `✍️ Envoie le nouveau texte pour le message ID ${id}, ou tape /cancel pour annuler.`);
+    }
+
+    await bot.answerCallbackQuery(query.id);
+  } catch (err) {
+    console.error("Erreur callback /listmsgs:", err);
+    bot.sendMessage(chatId, "❌ Une erreur est survenue.");
+  }
+});
+
+// --- Gestion de l'édition ---
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const state = editStates[chatId];
+  if (!state) return;
+
+  // --- Étape texte ---
+  if (state.step === "edit_text" && msg.text && !msg.text.startsWith("/")) {
+    state.newContent = msg.text;
+    state.step = "edit_media";
+    return bot.sendMessage(chatId, "📎 Envoie un nouveau média (*photo*, *vidéo*, *audio*, *voice*, *video_note*) ou une URL OU tape /skip pour garder l'ancien.", { parse_mode: "Markdown" });
+  }
+
+  // --- Étape média / URL ---
+  if (state.step === "edit_media") {
+    let mediaUrl = null;
+    let mediaType = null;
+
+    if (msg.photo) { mediaUrl = msg.photo.at(-1).file_id; mediaType = "photo"; }
+    else if (msg.video) { mediaUrl = msg.video.file_id; mediaType = "video"; }
+    else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
+    else if (msg.voice) { mediaUrl = msg.voice.file_id; mediaType = "voice"; }
+    else if (msg.video_note) { mediaUrl = msg.video_note.file_id; mediaType = "video_note"; }
+    else if (msg.text && msg.text.startsWith("http")) { mediaUrl = msg.text; mediaType = null; }
+
+    if (mediaUrl) {
+      state.newMediaUrl = mediaUrl;
+      state.newMediaType = mediaType;
+    }
+
+    const queryText = `
+      UPDATE messages_auto
+      SET contenu = $1,
+          media_url = COALESCE($2, media_url),
+          media_type = COALESCE($3, media_type),
+          updated_at = now()
+      WHERE id = $4
+    `;
+    await pool.query(queryText, [state.newContent, state.newMediaUrl, state.newMediaType, state.msgId]);
+
+    await bot.sendMessage(chatId, `✅ Message ID ${state.msgId} mis à jour avec succès.`);
+    delete editStates[chatId];
+  }
+});
+
+// --- Commande /skip pour garder ancien média / URL ---
+bot.onText(/\/skip/, async (msg) => {
+  const chatId = msg.chat.id;
+  const state = editStates[chatId];
+  if (!state || state.step !== "edit_media") return;
+
+  await pool.query("UPDATE messages_auto SET contenu = $1, updated_at = now() WHERE id = $2", [state.newContent, state.msgId]);
+  await bot.sendMessage(chatId, `✅ Message ID ${state.msgId} mis à jour (média / URL inchangé).`);
+  delete editStates[chatId];
+});
+
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
