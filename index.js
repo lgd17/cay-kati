@@ -141,7 +141,7 @@ bot.onText(/\/admin_menu/, (msg) => {
         [{ text: "/admin" }],          
         [{ text: "/ajouter_prono" }, { text: "/voir_pronos" }],   
         [{ text: "/addfixedmsg" }, { text:  "/fixedmenu" }],     
-        [{ text: "/addmsg" }, { text: "/listmsg"}],     
+        [{ text: "/addmsg" }, { text: "/listmsgs"}],     
         [{ text: "/addfixedmsg" }],     
         [{ text: "/settings" }],        
       ],
@@ -998,40 +998,40 @@ const dayjs = require("dayjs");
 // --- Commande /addmsg ---
 
 bot.onText(/\/addmsg/, (msg) => {
-  if (msg.from.id.toString() !== adminId) {
-    return bot.sendMessage(msg.chat.id, "❌ Tu n'as pas l'autorisation.");
+  const userId = msg.from.id.toString();
+  if (userId !== adminId) {
+    return bot.sendMessage(msg.chat.id, "❌ *Désolé, tu n’as pas l’autorisation d’utiliser cette commande.*", { parse_mode: "Markdown" });
   }
 
-  userStates[msg.from.id] = { step: 1 };
-  bot.sendMessage(msg.chat.id, "✏️ Envoie le **contenu du message** à programmer.");
+  userStates[userId] = { step: 1 };
+  bot.sendMessage(msg.chat.id, "✏️ *Veuillez envoyer le texte du message à programmer.*", { parse_mode: "Markdown" });
 });
 
-// --- Gestion des étapes ---
 bot.on("message", async (msg) => {
-  const userId = msg.from.id;
+  const userId = msg.from.id.toString();
   const state = userStates[userId];
   if (!state || msg.text?.startsWith("/")) return;
 
   const chatId = msg.chat.id;
 
-  // --- Étape 1 : texte ---
+  // --- Étape 1 : contenu texte ---
   if (state.step === 1) {
     state.contenu = msg.text;
     state.step = 2;
     return bot.sendMessage(
       chatId,
-      "📎 Envoie un **média** (image, vidéo, audio, vocal, vidéo ronde) OU tape `non` si tu n'en veux pas."
+      "📎 *Vous pouvez maintenant envoyer un média (photo, vidéo, audio, voice, video_note) ou tapez `non` pour aucun média.*",
+      { parse_mode: "Markdown" }
     );
   }
 
-  // --- Étape 2 : média ---
+  // --- Étape 2 : média ou 'non' ---
   if (state.step === 2) {
     if (msg.text && msg.text.toLowerCase() === "non") {
       state.media_url = null;
       state.media_type = null;
     } else if (msg.photo) {
-      const fileId = msg.photo[msg.photo.length - 1].file_id;
-      state.media_url = fileId;
+      state.media_url = msg.photo[msg.photo.length - 1].file_id;
       state.media_type = "photo";
     } else if (msg.video) {
       state.media_url = msg.video.file_id;
@@ -1047,43 +1047,41 @@ bot.on("message", async (msg) => {
       state.media_type = "video_note";
     } else if (msg.text && msg.text.startsWith("http")) {
       state.media_url = msg.text;
-      state.media_type = "url"; // lien externe
+      state.media_type = "url";
     } else {
       return bot.sendMessage(
         chatId,
-        "⛔ Format non reconnu. Envoie une photo, une vidéo, un vocal, un audio, une vidéo ronde ou tape `non`."
+        "⛔ *Format non reconnu. Merci d’envoyer un média valide ou tapez `non`.*",
+        { parse_mode: "Markdown" }
       );
     }
 
     state.step = 3;
     return bot.sendMessage(
       chatId,
-      "🕒 À quelle heure envoyer ? Format `HH:MM` (ex : `08:30`, `20:15`)."
+      "🕒 *Indiquez la date et l’heure d’envoi du message au format `DD/MM/YYYY HH:MM` (ex : 13/09/2025 20:30).*",
+      { parse_mode: "Markdown" }
     );
   }
 
-  // --- Étape 3 : heure ---
+  // --- Étape 3 : date et heure ---
   if (state.step === 3) {
-    const timeInput = msg.text.trim();
-    const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    const dateTimeInput = msg.text.trim();
+    const dateTimeRegex = /^([0-2]?[0-9]|3[0-1])\/(0?[1-9]|1[0-2])\/(\d{4}) ([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
 
-    if (!timeRegex.test(timeInput)) {
+    if (!dateTimeRegex.test(dateTimeInput)) {
       return bot.sendMessage(
         chatId,
-        "⛔ Format invalide. Utilise HH:MM (ex : `09:30`, `22:00`)."
+        "⛔ *Format invalide. Merci d’utiliser `DD/MM/YYYY HH:MM` (ex : 13/09/2025 20:30).*",
+        { parse_mode: "Markdown" }
       );
     }
 
-    const [hour, minute] = timeInput.split(":");
-    const now = dayjs();
-    let sendDate = now
-      .hour(Number(hour))
-      .minute(Number(minute))
-      .second(0)
-      .millisecond(0);
+    const [, day, month, year, hour, minute] = dateTimeInput.match(dateTimeRegex).map(Number);
+    let sendDate = dayjs().year(year).month(month - 1).date(day).hour(hour).minute(minute).second(0).millisecond(0);
 
-    if (sendDate.isBefore(now)) {
-      sendDate = sendDate.add(1, "day");
+    if (sendDate.isBefore(dayjs())) {
+      return bot.sendMessage(chatId, "⛔ *Cette date est déjà passée. Choisissez une date future.*", { parse_mode: "Markdown" });
     }
 
     try {
@@ -1092,12 +1090,16 @@ bot.on("message", async (msg) => {
         [state.contenu, state.media_url, state.media_type, sendDate.toDate()]
       );
 
-      const resume = `✅ Message enregistré avec succès :\n📝 Texte : ${state.contenu}\n🎞 Média : ${state.media_type || "Aucun"}\n🕒 Envoi prévu : ${sendDate.format("HH:mm")} (${sendDate.format("DD/MM/YYYY")})`;
+      const mediaText = state.media_type ? state.media_type : "Aucun média";
 
-      await bot.sendMessage(chatId, resume);
+      await bot.sendMessage(
+        chatId,
+        `✅ *Votre message a été programmé avec succès :*\n\n📝 *Texte* : ${state.contenu}\n🎞 *Média* : ${mediaText}\n🕒 *Envoi prévu* : ${sendDate.format("DD/MM/YYYY HH:mm")}`,
+        { parse_mode: "Markdown" }
+      );
     } catch (err) {
-      console.error(err);
-      await bot.sendMessage(chatId, "❌ Erreur lors de l'enregistrement du message.");
+      console.error("Erreur ajout message auto:", err);
+      await bot.sendMessage(chatId, "❌ *Une erreur est survenue lors de l’enregistrement du message.*", { parse_mode: "Markdown" });
     }
 
     delete userStates[userId];
@@ -1310,62 +1312,53 @@ bot.onText(/\/skip/, async (msg) => {
 
 
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/////////////////////////////////////////////////////////////////////////////////////////
+
+                       //=== COMMANDE /addfixedmsg ===\\
+// ====================== AJOUTE DES MESSAGES-FIXE ======================
 
 
+// --- /addfixedmsg ----
 
 bot.onText(/\/addfixedmsg/, (msg) => {
-  if (msg.from.id.toString() !== adminId) return;
-  fixedAddStates[msg.from.id] = { step: 1 };
-  bot.sendMessage(msg.chat.id, "📝 Envoie le *texte du message fixe*.", {
-    parse_mode: "Markdown",
-  });
-});
-
-//=== COMMANDE /editfixedmsg ===
-
-bot.onText(/\/editfixedmsg (\d+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  const id = parseInt(match[1]);
-
-  if (userId.toString() !== adminId)
-    return bot.sendMessage(chatId, "⛔ Tu n'as pas l'autorisation.");
-
-  try {
-    const { rows } = await pool.query(
-      "SELECT * FROM message_fixes WHERE id = $1",
-      [id]
-    );
-    if (rows.length === 0)
-      return bot.sendMessage(chatId, "❌ Message introuvable.");
-
-    fixedEditStates[userId] = { id, step: 1 };
-    bot.sendMessage(chatId, "📝 Envoie le nouveau *texte du message*.", {
-      parse_mode: "Markdown",
-    });
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(chatId, "❌ Erreur lors de la récupération du message.");
+  if (msg.from.id.toString() !== adminId) {
+    return bot.sendMessage(msg.chat.id, "❌ Tu n'es pas autorisé.");
   }
+
+  userStates[msg.from.id] = { step: "awaiting_text" };
+  bot.sendMessage(
+    msg.chat.id,
+    "✏️ *Envoie le texte principal du message fixe*",
+    { parse_mode: "Markdown" }
+  );
 });
 
-// ====== GESTION DES MESSAGES POUR AJOUT / ÉDITION =======
 bot.on("message", async (msg) => {
   const userId = msg.from.id;
+  const state = userStates[userId];
+  if (!state || msg.text?.startsWith("/")) return;
+
   const chatId = msg.chat.id;
 
-  const editState = fixedEditStates[userId];
-  const addState = fixedAddStates[userId];
-  if ((!editState && !addState) || msg.text?.startsWith("/")) return;
+  // Étape 1 : Texte
+  if (state.step === "awaiting_text") {
+    state.media_text = msg.text;
+    state.step = "awaiting_media";
+    return bot.sendMessage(
+      chatId,
+      "📎 *Envoie un média* (photo, vidéo, audio, vocal, vidéo ronde) *ou une URL externe*, ou tape `non` si tu n'en veux pas.",
+      { parse_mode: "Markdown" }
+    );
+  }
 
-  const handleMedia = (state, msg) => {
+  // Étape 2 : Média ou 'non'
+  if (state.step === "awaiting_media") {
     if (msg.text && msg.text.toLowerCase() === "non") {
       state.media_url = null;
       state.media_type = null;
     } else if (msg.photo) {
-      state.media_url = msg.photo.at(-1).file_id;
+      state.media_url = msg.photo[msg.photo.length - 1].file_id;
       state.media_type = "photo";
     } else if (msg.video) {
       state.media_url = msg.video.file_id;
@@ -1376,284 +1369,173 @@ bot.on("message", async (msg) => {
     } else if (msg.audio) {
       state.media_url = msg.audio.file_id;
       state.media_type = "audio";
+    } else if (msg.video_note) {
+      state.media_url = msg.video_note.file_id;
+      state.media_type = "video_note";
     } else if (msg.text && msg.text.startsWith("http")) {
       state.media_url = msg.text;
-      state.media_type = null;
+      state.media_type = "url";
     } else {
-      return false;
-    }
-    return true;
-  };
-
-  if (editState) {
-    if (editState.step === 1) {
-      editState.media_text = msg.text;
-      editState.step = 2;
       return bot.sendMessage(
         chatId,
-        "📎 Envoie le *nouveau média* (photo, vidéo, voix ou lien) ou tape `non`.",
+        "⛔ *Format non reconnu*. Envoie une image, vidéo, audio, vocal, vidéo ronde, URL ou tape `non`.",
         { parse_mode: "Markdown" }
       );
     }
-    if (editState.step === 2) {
-      if (!handleMedia(editState, msg))
-        return bot.sendMessage(chatId, "⛔ Format non reconnu. Réessaie.");
-      editState.step = 3;
-      return bot.sendMessage(
-        chatId,
-        "🕒 Envoie les *heures* (ex : `06:00,08:00`)",
-        { parse_mode: "Markdown" }
-      );
-    }
-    if (editState.step === 3) {
-      const heures = msg.text.split(",").map((h) => h.trim());
-      const isValid = heures.every((h) =>
-        /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(h)
-      );
-      if (!isValid)
-        return bot.sendMessage(chatId, "❌ Format d'heure invalide.");
-      editState.heures = heures.join(",");
 
-      const resume = `📝 *Récapitulatif :*\n🆔 ID : ${editState.id}\n📄 Texte : ${editState.media_text}\n🎞 Média : ${editState.media_url ? "Oui" : "Aucun"}\n⏰ Heures : ${editState.heures}`;
-      bot.sendMessage(chatId, resume, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "✅ Confirmer", callback_data: "confirm_edit" },
-              { text: "❌ Annuler", callback_data: "cancel_edit" },
-            ],
-          ],
-        },
-      });
-      editState.step = 4;
-    }
-    return;
+    state.step = "awaiting_time";
+    return bot.sendMessage(
+      chatId,
+      "🕒 *Envoie l'heure d'envoi* (format `HH:MM`, ex : `08:30`).",
+      { parse_mode: "Markdown" }
+    );
   }
 
-  if (addState) {
-    if (addState.step === 1) {
-      addState.media_text = msg.text;
-      addState.step = 2;
+  // Étape 3 : Heure
+  if (state.step === "awaiting_time") {
+    const regex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    if (!regex.test(msg.text.trim())) {
       return bot.sendMessage(
         chatId,
-        "📎 Envoie le *média* (photo, vidéo, voix ou lien) ou tape `non`.",
+        "⛔ *Format invalide*. Utilise `HH:MM` (ex : `09:30`, `22:00`).",
         { parse_mode: "Markdown" }
       );
     }
-    if (addState.step === 2) {
-      if (!handleMedia(addState, msg))
-        return bot.sendMessage(chatId, "⛔ Format non reconnu. Réessaie.");
-      addState.step = 3;
-      return bot.sendMessage(
-        chatId,
-        "🕒 Envoie les *heures* (ex : `06:00,08:00`)",
-        { parse_mode: "Markdown" }
-      );
-    }
-    if (addState.step === 3) {
-      const heures = msg.text.split(",").map((h) => h.trim());
-      const isValid = heures.every((h) =>
-        /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(h)
-      );
-      if (!isValid)
-        return bot.sendMessage(chatId, "❌ Format d'heure invalide.");
-      addState.heures = heures.join(",");
 
-      const resume = `🆕 *Nouveau message fixe :*\n📄 Texte : ${addState.media_text}\n🎞 Média : ${addState.media_url ? "Oui" : "Aucun"}\n⏰ Heures : ${addState.heures}`;
-      bot.sendMessage(chatId, resume, {
+    state.heures = msg.text.trim();
+    state.step = "awaiting_lang";
+
+    return bot.sendMessage(
+      chatId,
+      "🌐 *Choisis la langue du message fixe* :",
+      {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "✅ Enregistrer", callback_data: "confirm_add" },
-              { text: "❌ Annuler", callback_data: "cancel_add" },
+              { text: "🇫🇷 FR", callback_data: "lang:FR" },
+              { text: "🇬🇧 EN", callback_data: "lang:EN" },
             ],
           ],
         },
-      });
-      addState.step = 4;
-    }
+      }
+    );
   }
 });
 
-// ✅ MISE À JOUR CALLBACK QUERIES POUR AJOUTER media_type DANS LA BDD
+// === Callback Queries ===
 bot.on("callback_query", async (query) => {
   const userId = query.from.id;
+  const state = userStates[userId];
   const chatId = query.message.chat.id;
+
+  if (!state) return;
+
   const data = query.data;
-  const editState = fixedEditStates[userId];
-  const addState = fixedAddStates[userId];
 
-  if (data === "confirm_edit" && editState) {
-    try {
-      await pool.query(
-        "UPDATE message_fixes SET media_text=$1, media_url=$2, media_type=$3, heures=$4 WHERE id=$5",
-        [
-          editState.media_text,
-          editState.media_url,
-          editState.media_type,
-          editState.heures,
-          editState.id,
-        ]
-      );
-      await bot.sendMessage(chatId, "✅ Message modifié !");
-    } catch (err) {
-      console.error(err);
-      await bot.sendMessage(chatId, "❌ Erreur lors de la modification.");
-    }
-    delete fixedEditStates[userId];
-  }
+  // Choix langue
+  if (data.startsWith("lang:")) {
+    state.lang = data.split(":")[1];
 
-  if (data === "cancel_edit" && editState) {
-    await bot.sendMessage(chatId, "❌ Modification annulée.");
-    delete fixedEditStates[userId];
-  }
+    // Prévisualisation
+    let preview = `📝 *Texte* : ${state.media_text}\n🕒 *Heure* : ${state.heures}\n🌐 *Langue* : ${state.lang}`;
+    preview += `\n🎞 *Média* : ${state.media_type || "Aucun"}`;
 
-  if (data === "confirm_add" && addState) {
-    try {
-      await pool.query(
-        "INSERT INTO message_fixes (media_text, media_url, media_type, heures) VALUES ($1, $2, $3, $4)",
-        [
-          addState.media_text,
-          addState.media_url,
-          addState.media_type,
-          addState.heures,
-        ]
-      );
-      await bot.sendMessage(chatId, "✅ Message ajouté !");
-    } catch (err) {
-      console.error(err);
-      await bot.sendMessage(chatId, "❌ Erreur lors de l'ajout.");
-    }
-    delete fixedAddStates[userId];
-  }
-
-  if (data === "cancel_add" && addState) {
-    await bot.sendMessage(chatId, "❌ Ajout annulé.");
-    delete fixedAddStates[userId];
-  }
-});
-
-bot.on("callback_query", async (query) => {
-  try {
-    const data = query.data;
-    const chatId = query.message.chat.id;
-    const userId = query.from.id;
-
-    // ✅ Test du message fixe
-    if (data.startsWith("testfixed_")) {
-      const id = data.split("_")[1];
-      const { rows } = await pool.query("SELECT * FROM message_fixes WHERE id = $1", [id]);
-      const row = rows[0];
-      if (!row) {
-        await bot.sendMessage(chatId, "❌ Message introuvable.");
-        return;
+    if (state.media_url) {
+      if (state.media_type === "photo") {
+        await bot.sendPhoto(chatId, state.media_url, {
+          caption: preview,
+          parse_mode: "Markdown",
+        });
+      } else if (state.media_type === "video") {
+        await bot.sendVideo(chatId, state.media_url, {
+          caption: preview,
+          parse_mode: "Markdown",
+        });
+      } else if (state.media_type === "voice") {
+        await bot.sendVoice(chatId, state.media_url, {
+          caption: preview,
+          parse_mode: "Markdown",
+        });
+      } else if (state.media_type === "audio") {
+        await bot.sendAudio(chatId, state.media_url, {
+          caption: preview,
+          parse_mode: "Markdown",
+        });
+      } else if (state.media_type === "video_note") {
+        await bot.sendVideoNote(chatId, state.media_url);
+        await bot.sendMessage(chatId, preview, { parse_mode: "Markdown" });
+      } else if (state.media_type === "url") {
+        await bot.sendMessage(chatId, `${preview}\n🔗 ${state.media_url}`, {
+          parse_mode: "Markdown",
+        });
       }
+    } else {
+      await bot.sendMessage(chatId, preview, { parse_mode: "Markdown" });
+    }
 
-      const keyboard = {
+    // Confirmation
+    return bot.sendMessage(chatId, "✅ *Confirmer l'enregistrement ?*", {
+      parse_mode: "Markdown",
+      reply_markup: {
         inline_keyboard: [
           [
-            { text: "📢 Publier maintenant", callback_data: `publishfixed_${id}` },
-            { text: "❌ Annuler", callback_data: "cancel_publishfixed" },
+            { text: "✅ Confirmer", callback_data: "confirm_add_fixed" },
+            { text: "❌ Annuler", callback_data: "cancel_add_fixed" },
           ],
         ],
-      };
+      },
+    });
+  }
 
-      switch (row.media_type) {
-        case "photo":
-          await bot.sendPhoto(chatId, row.media_url, {
-            caption: row.media_text,
-            reply_markup: keyboard,
-          });
-          break;
-        case "video":
-          await bot.sendVideo(chatId, row.media_url, {
-            caption: row.media_text,
-            reply_markup: keyboard,
-          });
-          break;
-        case "voice":
-          await bot.sendVoice(chatId, row.media_url);
-          await bot.sendMessage(chatId, row.media_text, { reply_markup: keyboard });
-          break;
-        case "audio":
-          await bot.sendAudio(chatId, row.media_url);
-          await bot.sendMessage(chatId, row.media_text, { reply_markup: keyboard });
-          break;
-        default:
-          await bot.sendMessage(chatId, row.media_text, { reply_markup: keyboard });
-          break;
-      }
+  // Confirmation ajout
+  if (data === "confirm_add_fixed") {
+    try {
+      await pool.query(
+        `INSERT INTO message_fixes (media_text, media_url, heures, media_type, lang)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          state.media_text,
+          state.media_url,
+          state.heures,
+          state.media_type,
+          state.lang,
+        ]
+      );
+      await bot.sendMessage(
+        chatId,
+        "✅ *Message fixe enregistré avec succès !*",
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      console.error(err);
+      await bot.sendMessage(
+        chatId,
+        "❌ *Erreur lors de l'enregistrement en base.*",
+        { parse_mode: "Markdown" }
+      );
     }
+    delete userStates[userId];
+  }
 
-    // ✅ Publication dans le canal
-    else if (data.startsWith("publishfixed_")) {
-      const id = data.split("_")[1];
-      const { rows } = await pool.query("SELECT * FROM message_fixes WHERE id = $1", [id]);
-      const row = rows[0];
-      if (!row) {
-        await bot.sendMessage(chatId, "❌ Message introuvable.");
-        return;
-      }
-
-      switch (row.media_type) {
-        case "photo":
-          await bot.sendPhoto(channelId, row.media_url, { caption: row.media_text });
-          break;
-        case "video":
-          await bot.sendVideo(channelId, row.media_url, { caption: row.media_text });
-          break;
-        case "voice":
-          await bot.sendVoice(channelId, row.media_url);
-          await bot.sendMessage(channelId, row.media_text);
-          break;
-        case "audio":
-          await bot.sendAudio(channelId, row.media_url);
-          await bot.sendMessage(channelId, row.media_text);
-          break;
-        default:
-          if (row.media_url?.startsWith("http")) {
-            await bot.sendMessage(channelId, `${row.media_text}\n🔗 ${row.media_url}`);
-          } else {
-            await bot.sendMessage(channelId, row.media_text);
-          }
-          break;
-      }
-
-      await bot.sendMessage(chatId, "✅ Message publié dans le canal.");
-    }
-
-    // ✅ Annulation de la publication
-    else if (data === "cancel_publishfixed") {
-      await bot.sendMessage(chatId, "❌ Publication annulée.");
-    }
-
-    // ✅ Suppression du message fixe
-    else if (data.startsWith("deletefixed_")) {
-      if (userId.toString() !== adminId) {
-        await bot.answerCallbackQuery(query.id, { text: "🚫 Action non autorisée." });
-        return;
-      }
-
-      const id = data.split("_")[1];
-      await pool.query("DELETE FROM message_fixes WHERE id = $1", [id]);
-      await bot.sendMessage(chatId, `✅ Message #${id} supprimé.`);
-    }
-
-    // ✅ Toujours répondre au callback
-    await bot.answerCallbackQuery(query.id);
-
-  } catch (err) {
-    console.error("❌ Erreur dans callback_query:", err);
-    await bot.sendMessage(query.message.chat.id, "⚠️ Une erreur est survenue.");
+  // Annulation
+  if (data === "cancel_add_fixed") {
+    delete userStates[userId];
+    await bot.sendMessage(chatId, "❌ *Ajout annulé.*", {
+      parse_mode: "Markdown",
+    });
   }
 });
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-//=== COMMANDE /fixedmenu ===
+
+                        //=== COMMANDE /fixedmenu ===\\
+// ====================== LISTES DES MESSAGES-FIXE ======================
+
+
+//--- COMMANDE /fixedmenu ---
 
 bot.onText(/\/fixedmenu/, async (msg) => {
   if (msg.from.id.toString() !== adminId) return;
@@ -1667,8 +1549,12 @@ bot.onText(/\/fixedmenu/, async (msg) => {
     }
 
     for (const row of rows) {
-      const mediaInfo = row.media_url ? "🎞 Oui" : "❌ Aucun";
-      const text = `🆔 ID: ${row.id}\n📄 Texte: ${row.media_text}\n🎞 Média: ${mediaInfo}\n⏰ Heures: ${row.heures}`;
+      const mediaInfo = row.media_url
+        ? `🎞 ${row.media_type || "Inconnu"}`
+        : "❌ Aucun";
+
+      const text = `🆔 *ID*: ${row.id}\n📄 *Texte*: ${row.media_text}\n🎞 *Média*: ${mediaInfo}\n⏰ *Heures*: ${row.heures}\n🌐 *Langue*: ${row.lang}`;
+
       const buttons = [
         [{ text: "✏️ Modifier", callback_data: `editfixed_${row.id}` }],
         [{ text: "🗑 Supprimer", callback_data: `deletefixed_${row.id}` }],
@@ -1676,6 +1562,7 @@ bot.onText(/\/fixedmenu/, async (msg) => {
       ];
 
       await bot.sendMessage(msg.chat.id, text, {
+        parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons },
       });
     }
@@ -1692,11 +1579,17 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
 
   try {
+    // 🔹 Suppression
     if (data.startsWith("deletefixed_")) {
       const id = data.split("_")[1];
       await pool.query("DELETE FROM message_fixes WHERE id=$1", [id]);
-      await bot.sendMessage(chatId, `🗑 Message ID ${id} supprimé.`);
-    } else if (data.startsWith("testfixed_")) {
+      await bot.sendMessage(chatId, `🗑 Message fixe ID *${id}* supprimé.`, {
+        parse_mode: "Markdown",
+      });
+    }
+
+    // 🔹 Test d’envoi
+    else if (data.startsWith("testfixed_")) {
       const id = data.split("_")[1];
       const { rows } = await pool.query(
         "SELECT * FROM message_fixes WHERE id=$1",
@@ -1716,23 +1609,32 @@ bot.on("callback_query", async (query) => {
             caption: row.media_text,
           });
         } else if (row.media_type === "voice") {
-          await bot.sendVoice(chatId, row.media_url);
-          await bot.sendMessage(chatId, row.media_text);
+          await bot.sendVoice(chatId, row.media_url, {
+            caption: row.media_text,
+          });
         } else if (row.media_type === "audio") {
-          await bot.sendAudio(chatId, row.media_url);
+          await bot.sendAudio(chatId, row.media_url, {
+            caption: row.media_text,
+          });
+        } else if (row.media_type === "video_note") {
+          await bot.sendVideoNote(chatId, row.media_url);
           await bot.sendMessage(chatId, row.media_text);
-        } else if (row.media_url?.startsWith("http")) {
-          await bot.sendMessage(chatId, row.media_text);
+        } else if (row.media_type === "url") {
+          await bot.sendMessage(chatId, `${row.media_text}\n🔗 ${row.media_url}`);
         } else {
           await bot.sendMessage(chatId, row.media_text);
         }
       }
-    } else if (data.startsWith("editfixed_")) {
+    }
+
+    // 🔹 Modification
+    else if (data.startsWith("editfixed_")) {
       const id = data.split("_")[1];
       editStates[userId] = { step: "awaiting_text", id };
       await bot.sendMessage(
         chatId,
-        "✏️ Envoie le nouveau texte (caption) du message."
+        "✏️ Envoie le *nouveau texte* du message.",
+        { parse_mode: "Markdown" }
       );
     }
 
@@ -1746,7 +1648,7 @@ bot.on("callback_query", async (query) => {
   }
 });
 
-// === Suivi de la modification (étape texte puis heures) ===
+// === Suivi des étapes de modification ===
 bot.on("message", async (msg) => {
   const userId = msg.from.id.toString();
   const chatId = msg.chat.id;
@@ -1754,33 +1656,85 @@ bot.on("message", async (msg) => {
   if (editStates[userId]) {
     const state = editStates[userId];
 
+    // Étape 1 → Texte
     if (state.step === "awaiting_text") {
-      state.text = msg.text;
+      state.media_text = msg.text;
+      state.step = "awaiting_media";
+      return bot.sendMessage(
+        chatId,
+        "📎 Envoie le *nouveau média* (photo, vidéo, voix, audio, video_note, ou lien URL), ou tape `non`.",
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    // Étape 2 → Média
+    if (state.step === "awaiting_media") {
+      if (msg.text && msg.text.toLowerCase() === "non") {
+        state.media_url = null;
+        state.media_type = null;
+      } else if (msg.photo) {
+        state.media_url = msg.photo.at(-1).file_id;
+        state.media_type = "photo";
+      } else if (msg.video) {
+        state.media_url = msg.video.file_id;
+        state.media_type = "video";
+      } else if (msg.voice) {
+        state.media_url = msg.voice.file_id;
+        state.media_type = "voice";
+      } else if (msg.audio) {
+        state.media_url = msg.audio.file_id;
+        state.media_type = "audio";
+      } else if (msg.video_note) {
+        state.media_url = msg.video_note.file_id;
+        state.media_type = "video_note";
+      } else if (msg.text && msg.text.startsWith("http")) {
+        state.media_url = msg.text;
+        state.media_type = "url";
+      } else {
+        return bot.sendMessage(chatId, "⛔ Format non reconnu. Réessaie.");
+      }
+
       state.step = "awaiting_hours";
       return bot.sendMessage(
         chatId,
-        "⏰ Envoie les nouvelles heures au format HH:MM, séparées par virgules.\nExemple : 06:00, 14:30, 22:00"
+        "⏰ Envoie les *heures* (ex : `06:00,14:30`)",
+        { parse_mode: "Markdown" }
       );
     }
 
+    // Étape 3 → Heures
     if (state.step === "awaiting_hours") {
       state.heures = msg.text;
-      await pool.query(
-        "UPDATE message_fixes SET media_text=$1, heures=$2 WHERE id=$3",
-        [state.text, state.heures, state.id]
-      );
-      delete editStates[userId];
+      state.step = "awaiting_lang";
       return bot.sendMessage(
         chatId,
-        `✅ Message ID ${state.id} modifié avec succès.`
+        "🌐 Envoie le code *langue* (`FR` ou `EN`).",
+        { parse_mode: "Markdown" }
       );
+    }
+
+    // Étape 4 → Langue + Enregistrement en BDD
+    if (state.step === "awaiting_lang") {
+      state.lang = msg.text.toUpperCase() === "EN" ? "EN" : "FR";
+
+      await pool.query(
+        "UPDATE message_fixes SET media_text=$1, media_url=$2, media_type=$3, heures=$4, lang=$5 WHERE id=$6",
+        [
+          state.media_text,
+          state.media_url,
+          state.media_type,
+          state.heures,
+          state.lang,
+          state.id,
+        ]
+      );
+
+      await bot.sendMessage(
+        chatId,
+        `✅ Message fixe ID *${state.id}* modifié avec succès.`,
+        { parse_mode: "Markdown" }
+      );
+      delete editStates[userId];
     }
   }
 });
-
-
-
-/////////////////////////////////////////////////////////////////////////////////////////
-
-
-/////////////////////////////////////////////////////////////////////////////////////////
