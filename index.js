@@ -39,20 +39,27 @@ const fixedEditStates = {};
 const editStates = {};
 
 
-const ultimateSend = require("./ultimateTelegramSend");
+const ultimateSend = require("./ultimateTelegramSend");;
+const supabase = require('./db');
 
-const messageFromDB = `
-Voici un message depuis Supabase avec :
-* Gras
-_ Italique
-[Liens](https://example.com)
-> Citation simulée
-Emoji 😎
-Retours à la ligne
-Et plus encore...
-`.repeat(5); // simulate long message
+async function sendFromDB() {
+  const chatId = @Roux_Canal_linktree_intermidiare
 
-ultimateSend(chatId, messageFromDB, { citation: true });
+  const { data, error } = await supabase
+    .from('messages')
+    .select('content')
+    .eq('lang', 'FR')
+    .limit(1)
+    .single();
+
+  if (error || !data) return console.error("Erreur DB:", error);
+
+  const messageFromDB = data.content;
+
+  await ultimateSend(chatId, messageFromDB, { citation: true });
+}
+
+sendFromDB();
 
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
