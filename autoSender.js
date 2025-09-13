@@ -1,6 +1,7 @@
 const schedule = require("node-schedule");
 const { pool } = require("./db"); 
 const bot = require("./bot"); 
+const ultimateSend = require('./ultimateTelegramSend');
 const dayjs = require("dayjs");
 
 const CANAL_ID = process.env.CANAL_ID; 
