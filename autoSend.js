@@ -1,7 +1,6 @@
 // autoSend.js
-// autoSend.js
-const { pool } = require("./db");
-const { bot } = require("./bot");
+const pool = require("./db");
+const bot = require("./bot"); 
 const moment = require("moment-timezone");
 const cron = require("node-cron");
 
