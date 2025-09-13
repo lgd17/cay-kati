@@ -43,7 +43,7 @@ const ultimateSend = require("./ultimateTelegramSend");;
 const supabase = require('./db');
 
 async function sendFromDB() {
-  const chatId = @Roux_Canal_linktree_intermidiare
+   const chatId = '@Roux_Canal_linktree_intermidiare';
 
   const { data, error } = await supabase
     .from('messages')
