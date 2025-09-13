@@ -4,27 +4,45 @@ const bot = require("./bot");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
 
-const CANAL_ID = process.env.CANAL_ID;
+const CANAL_ID = process.env.CANAL_ID;      // Canal principal (rotation FR/EN)
+const CANAL2_ID = process.env.CANAL2_ID;    // Deuxième canal (2 messages fixes)
 const ADMIN_ID = process.env.ADMIN_ID;
 
 let messagesFR = [];
 let messagesEN = [];
+let messagesCanal2 = [];
 
-// ====== Charger tous les messages fixes ======
+// =================== CHARGEMENT MESSAGES ===================
+
+// Canal principal
 async function loadMessages() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
     messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
     messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
     console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
-    await bot.sendMessage(ADMIN_ID, `📥 Messages quotidiens chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+    await bot.sendMessage(ADMIN_ID, `📥 Messages Canal1 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
   } catch (err) {
-    console.error("❌ Erreur en chargeant les messages :", err.message);
-    await bot.sendMessage(ADMIN_ID, `❌ Erreur en chargeant les messages : ${err.message}`);
+    console.error("❌ Erreur en chargeant les messages Canal1 :", err.message);
+    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
   }
 }
 
-// ====== Sélection des 5 messages par langue ======
+// Canal 2
+async function loadMessagesCanal2() {
+  try {
+    const res = await pool.query("SELECT * FROM message_fixes2 ORDER BY id");
+    messagesCanal2 = res.rows;
+    console.log(`📥 ${messagesCanal2.length} messages Canal2 chargés.`);
+    if(bot) await bot.sendMessage(ADMIN_ID, `📥 Messages Canal2 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  } catch (err) {
+    console.error("❌ Erreur en chargeant les messages Canal2 :", err.message);
+    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal2 : ${err.message}`);
+  }
+}
+
+// =================== ROTATION JOURNALIERES ===================
+
 async function getDailyMessages(langMessages, type) {
   if (!langMessages.length) return [];
 
@@ -47,7 +65,48 @@ async function getDailyMessages(langMessages, type) {
   return daily;
 }
 
-// ====== Envoyer les messages à l'heure prévue ======
+// =================== FONCTION ENVOI ===================
+
+async function sendMessage(msg, canalId) {
+  try {
+    switch (msg.media_type) {
+      case "photo":
+        await bot.sendPhoto(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        break;
+      case "video":
+        await bot.sendVideo(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        break;
+      case "audio":
+        await bot.sendAudio(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        break;
+      case "voice":
+        await bot.sendVoice(canalId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+        break;
+      case "video_note":
+        await bot.sendVideoNote(canalId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+        break;
+      default:
+        if (msg.media_url?.startsWith("http")) {
+          await bot.sendMessage(canalId, `${msg.media_text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
+        } else {
+          await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+        }
+        break;
+    }
+
+    await pool.query("INSERT INTO message_logs(message_id) VALUES($1)", [msg.id]);
+    console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur canal ${canalId}`);
+  } catch (err) {
+    console.error(`❌ Erreur envoi message ${msg.id} canal ${canalId}:`, err.message);
+    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id} canal ${canalId}: ${err.message}`);
+  }
+}
+
+// =================== ENVOI AUTOMATIQUE ===================
+
+// Canal principal (rotation)
 async function sendScheduledMessages() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
 
@@ -57,78 +116,56 @@ async function sendScheduledMessages() {
     const dailyMessages = [...dailyFR, ...dailyEN];
 
     const toSend = dailyMessages.filter(m => m && m.heures?.split(",").includes(currentTime));
-
     for (const msg of toSend) {
-      try {
-        const sentCheck = await pool.query(
-          "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
-          [msg.id]
-        );
-        if (sentCheck.rowCount > 0) continue; // déjà envoyé récemment
+      const sentCheck = await pool.query(
+        "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
+        [msg.id]
+      );
+      if (sentCheck.rowCount > 0) continue;
 
-        // ====== Envoi selon type de média ======
-        switch (msg.media_type) {
-          case "photo":
-            await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
-            break;
-          case "video":
-            await bot.sendVideo(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
-            break;
-          case "audio":
-            await bot.sendAudio(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
-            break;
-          case "voice":
-            await bot.sendVoice(CANAL_ID, msg.media_url);
-            if (msg.media_text) {
-              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
-            }
-            break;
-          case "video_note":
-            await bot.sendVideoNote(CANAL_ID, msg.media_url);
-            if (msg.media_text) {
-              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
-            }
-            break;
-          default:
-            if (msg.media_url?.startsWith("http")) {
-              await bot.sendMessage(CANAL_ID, `${msg.media_text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
-            } else {
-              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
-            }
-            break;
-        }
-
-        await pool.query("INSERT INTO message_logs(message_id) VALUES($1)", [msg.id]);
-        console.log(`✅ Message ${msg.id} envoyé à ${currentTime}`);
-      } catch (err) {
-        console.error(`❌ Erreur envoi message ${msg.id}:`, err.message);
-        await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id}: ${err.message}`);
-      }
+      await sendMessage(msg, CANAL_ID);
     }
   } catch (err) {
-    console.error("❌ Erreur générale :", err.message);
-    await bot.sendMessage(ADMIN_ID, `❌ Erreur générale autoSend : ${err.message}`);
+    console.error("❌ Erreur générale Canal1 :", err.message);
+    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur générale Canal1 : ${err.message}`);
   }
 }
 
+// Canal2 (2 messages fixes, pas de rotation)
+async function sendScheduledMessagesCanal2() {
+  const currentTime = moment().tz("Africa/Lome").format("HH:mm");
+  for (const msg of messagesCanal2) {
+    if (!msg.heures?.split(",").includes(currentTime)) continue;
 
-// ====== Cron ======
+    const sentCheck = await pool.query(
+      "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
+      [msg.id]
+    );
+    if (sentCheck.rowCount > 0) continue;
 
-// 1️⃣ Charger messages au démarrage
+    await sendMessage(msg, CANAL2_ID);
+  }
+}
+
+// =================== CRON ===================
+
+// Charger messages au démarrage
 loadMessages();
+loadMessagesCanal2();
 
-// 2️⃣ Recharger chaque jour à 05:45 Lomé
+// Recharger messages chaque jour à 05:45 Lomé
 cron.schedule("45 5 * * *", async () => {
-  console.log("⏱️ Chargement quotidien des messages à 05:45 Lomé...");
+  console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé...");
   await loadMessages();
+  await loadMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-// 3️⃣ Vérifier chaque minute pour envoyer les messages
+// Vérifier chaque minute pour envoyer les messages
 cron.schedule("* * * * *", async () => {
   await sendScheduledMessages();
+  await sendScheduledMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-console.log("✅ autoSend.js lancé : rotation FR/EN, support texte/photo/vidéo/audio/voice/video_note/URL et heures fixes.");
-
+console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes.");
 
 module.exports = { loadMessages, sendScheduledMessages };
