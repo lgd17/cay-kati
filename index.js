@@ -1740,3 +1740,78 @@ bot.on("message", async (msg) => {
     }
   }
 });
+
+
+
+
+
+// === /addfixedmsg2 pour le Canal2 ===
+const addStates2 = {}; // suivi des étapes pour chaque admin
+
+bot.onText(/\/addfixedmsg2/, async (msg) => {
+  if (msg.from.id.toString() !== ADMIN_ID) return;
+  const chatId = msg.chat.id;
+
+  addStates2[chatId] = { step: 'awaiting_text' };
+  await bot.sendMessage(chatId, "✏️ Envoie le texte du message pour le Canal2.");
+});
+
+// === Gestion des réponses étape par étape ===
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const state = addStates2[chatId];
+  if (!state) return;
+
+  try {
+    if (state.step === 'awaiting_text') {
+      state.text = msg.text || "";
+      state.step = 'awaiting_media';
+      await bot.sendMessage(chatId, "📎 Envoie le média (photo, vidéo, audio, voice, video_note ou URL) ou tape 'none' si pas de média.");
+    } else if (state.step === 'awaiting_media') {
+      if (msg.text && msg.text.toLowerCase() === 'none') {
+        state.media_url = null;
+        state.media_type = null;
+      } else if (msg.photo) {
+        state.media_url = msg.photo[msg.photo.length - 1].file_id;
+        state.media_type = "photo";
+      } else if (msg.video) {
+        state.media_url = msg.video.file_id;
+        state.media_type = "video";
+      } else if (msg.audio) {
+        state.media_url = msg.audio.file_id;
+        state.media_type = "audio";
+      } else if (msg.voice) {
+        state.media_url = msg.voice.file_id;
+        state.media_type = "voice";
+      } else if (msg.video_note) {
+        state.media_url = msg.video_note.file_id;
+        state.media_type = "video_note";
+      } else if (msg.text && msg.text.startsWith("http")) {
+        state.media_url = msg.text;
+        state.media_type = "url";
+      } else {
+        state.media_url = null;
+        state.media_type = null;
+      }
+
+      state.step = 'awaiting_hours';
+      await bot.sendMessage(chatId, "⏰ Envoie les heures d'envoi au format HH:MM, séparées par des virgules.\nExemple : 06:00,14:30");
+    } else if (state.step === 'awaiting_hours') {
+      state.heures = msg.text;
+      // Insertion en base
+      const insertQuery = `
+        INSERT INTO message_fixes2 (media_text, media_url, media_type, heures)
+        VALUES ($1,$2,$3,$4) RETURNING id
+      `;
+      const res = await pool.query(insertQuery, [state.text, state.media_url, state.media_type, state.heures]);
+      const newId = res.rows[0].id;
+
+      await bot.sendMessage(chatId, `✅ Message ajouté pour Canal2 avec ID ${newId}.`);
+      delete addStates2[chatId];
+    }
+  } catch (err) {
+    console.error("❌ Erreur /addfixedmsg2 :", err.message);
+    await bot.sendMessage(chatId, `❌ Erreur : ${err.message}`);
+    delete addStates2[chatId];
+  }
+});
