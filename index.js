@@ -39,6 +39,20 @@ const fixedEditStates = {};
 const editStates = {};
 
 
+const ultimateSend = require("./ultimateTelegramSend");
+
+const messageFromDB = `
+Voici un message depuis Supabase avec :
+* Gras
+_ Italique
+[Liens](https://example.com)
+> Citation simulée
+Emoji 😎
+Retours à la ligne
+Et plus encore...
+`.repeat(5); // simulate long message
+
+ultimateSend(chatId, messageFromDB, { citation: true });
 
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
