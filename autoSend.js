@@ -69,27 +69,31 @@ async function sendScheduledMessages() {
         // ====== Envoi selon type de média ======
         switch (msg.media_type) {
           case "photo":
-            await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.media_text });
+            await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
             break;
           case "video":
-            await bot.sendVideo(CANAL_ID, msg.media_url, { caption: msg.media_text });
+            await bot.sendVideo(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
             break;
           case "audio":
-            await bot.sendAudio(CANAL_ID, msg.media_url, { caption: msg.media_text });
+            await bot.sendAudio(CANAL_ID, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
             break;
           case "voice":
             await bot.sendVoice(CANAL_ID, msg.media_url);
-            await bot.sendMessage(CANAL_ID, msg.media_text);
+            if (msg.media_text) {
+              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
+            }
             break;
           case "video_note":
             await bot.sendVideoNote(CANAL_ID, msg.media_url);
-            await bot.sendMessage(CANAL_ID, msg.media_text);
+            if (msg.media_text) {
+              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
+            }
             break;
           default:
             if (msg.media_url?.startsWith("http")) {
-              await bot.sendMessage(CANAL_ID, `${msg.media_text}\n🔗 ${msg.media_url}`);
+              await bot.sendMessage(CANAL_ID, `${msg.media_text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
             } else {
-              await bot.sendMessage(CANAL_ID, msg.media_text);
+              await bot.sendMessage(CANAL_ID, msg.media_text, { parse_mode: 'HTML' });
             }
             break;
         }
@@ -106,6 +110,7 @@ async function sendScheduledMessages() {
     await bot.sendMessage(ADMIN_ID, `❌ Erreur générale autoSend : ${err.message}`);
   }
 }
+
 
 // ====== Cron ======
 
