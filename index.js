@@ -40,26 +40,7 @@ const editStates = {};
 
 
 const ultimateSend = require("./ultimateTelegramSend");;
-const supabase = require('./db');
 
-async function sendFromDB() {
-   const chatId = '@Roux_Canal_linktree_intermidiare';
-
-  const { data, error } = await supabase
-    .from('messages')
-    .select('content')
-    .eq('lang', 'FR')
-    .limit(1)
-    .single();
-
-  if (error || !data) return console.error("Erreur DB:", error);
-
-  const messageFromDB = data.content;
-
-  await ultimateSend(chatId, messageFromDB, { citation: true });
-}
-
-sendFromDB();
 
 
 //////////////////////////////////////////////////==== Menu ====\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
