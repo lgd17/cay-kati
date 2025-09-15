@@ -69,29 +69,55 @@ async function getDailyMessages(langMessages, type) {
 
 async function sendMessage(msg, canalId) {
   try {
+    // Fonction pour échapper les caractères spéciaux MarkdownV2
+    function escapeMdV2(text) {
+      if (!text) return "";
+      return text
+        .replace(/_/g, "\\_")
+        .replace(/\*/g, "\\*")
+        .replace(/\[/g, "\\[")
+        .replace(/]/g, "\\]")
+        .replace(/\(/g, "\\(")
+        .replace(/\)/g, "\\)")
+        .replace(/~/g, "\\~")
+        .replace(/`/g, "\\`")
+        .replace(/>/g, "\\>")
+        .replace(/#/g, "\\#")
+        .replace(/\+/g, "\\+")
+        .replace(/-/g, "\\-")
+        .replace(/=/g, "\\=")
+        .replace(/\|/g, "\\|")
+        .replace(/\{/g, "\\{")
+        .replace(/\}/g, "\\}")
+        .replace(/\./g, "\\.")
+        .replace(/!/g, "\\!");
+    }
+
+    const text = escapeMdV2(msg.media_text);
+
     switch (msg.media_type) {
       case "photo":
-        await bot.sendPhoto(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
         break;
       case "video":
-        await bot.sendVideo(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
         break;
       case "audio":
-        await bot.sendAudio(canalId, msg.media_url, { caption: msg.media_text, parse_mode: 'HTML' });
+        await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
         break;
       case "voice":
         await bot.sendVoice(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
         break;
       case "video_note":
         await bot.sendVideoNote(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
         break;
       default:
         if (msg.media_url?.startsWith("http")) {
-          await bot.sendMessage(canalId, `${msg.media_text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
+          await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'MarkdownV2' });
         } else {
-          await bot.sendMessage(canalId, msg.media_text, { parse_mode: 'HTML' });
+          await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
         }
         break;
     }
