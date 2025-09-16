@@ -77,29 +77,35 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
       return;
     }
 
-    // Fonction pour échapper les caractères spéciaux MarkdownV2
-    function escapeMdV2(text) {
-      if (!text) return "";
-      return text
-        //.replace(/_/g, "\\_")
-        //.replace(/\*/g, "\\*")
-        //.replace(/\[/g, "\\[")
-        //.replace(/]/g, "\\]")
-        //.replace(/\(/g, "\\(")
-        //.replace(/\)/g, "\\)")
-        //.replace(/~/g, "\\~")
-        //.replace(/`/g, "\\`")
-        //.replace(/>/g, "\\>")
-        .replace(/#/g, "\\#")
-        .replace(/\+/g, "\\+")
-        .replace(/-/g, "\\-")
-        .replace(/=/g, "\\=")
-        .replace(/\|/g, "\\|")
-        .replace(/\{/g, "\\{")
-        .replace(/\}/g, "\\}")
-        .replace(/\./g, "\\.")
-        .replace(/!/g, "\\!");
-    }
+function escapeMdV2(text) {
+  if (!text) return "";
+
+  // Si c’est un lien (http, https, t.me...), on ne touche pas
+  if (/https?:\/\/|t\.me/.test(text)) {
+    return text;
+  }
+
+  return text
+    // garde gras (*) et italique (_)
+    //.replace(/_/g, "\\_")
+    //.replace(/\*/g, "\\*")
+    // garde les liens [ ] ( )
+    //.replace(/\[/g, "\\[")
+    //.replace(/]/g, "\\]")
+    //.replace(/\(/g, "\\(")
+    //.replace(/\)/g, "\\)")
+    // garde la citation >
+    //.replace(/>/g, "\\>")
+    .replace(/#/g, "\\#")
+    .replace(/\+/g, "\\+")
+    .replace(/-/g, "\\-")
+    .replace(/=/g, "\\=")
+    .replace(/\|/g, "\\|")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/!/g, "\\!");
+}
+
 
     const text = escapeMdV2(msg.media_text);
 
