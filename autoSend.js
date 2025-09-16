@@ -80,22 +80,21 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
 function escapeMdV2(text) {
   if (!text) return "";
 
-  // Si c’est un lien (http, https, t.me...), on ne touche pas
-  if (/https?:\/\/|t\.me/.test(text)) {
-    return text;
-  }
+  // Si c’est un lien (http, https, t.me...), ne rien toucher
+  if (/https?:\/\/|t\.me/.test(text)) return text;
 
   return text
-    // garde gras (*) et italique (_)
+    // Garder gras (*) et italique (_)
     //.replace(/_/g, "\\_")
     //.replace(/\*/g, "\\*")
-    // garde les liens [ ] ( )
+    // Garder les liens [texte](url)
     //.replace(/\[/g, "\\[")
     //.replace(/]/g, "\\]")
     //.replace(/\(/g, "\\(")
     //.replace(/\)/g, "\\)")
-    // garde la citation >
+    // Garder la citation >
     //.replace(/>/g, "\\>")
+    // Échapper uniquement les caractères Telegram problématiques
     .replace(/#/g, "\\#")
     .replace(/\+/g, "\\+")
     .replace(/-/g, "\\-")
@@ -103,38 +102,41 @@ function escapeMdV2(text) {
     .replace(/\|/g, "\\|")
     .replace(/\{/g, "\\{")
     .replace(/\}/g, "\\}")
-    .replace(/!/g, "\\!");
+    .replace(/!/g, "\\!")
+    // Attention au point qui bloque MarkdownV2
+    .replace(/\./g, "\\.");
 }
 
 
-    const text = escapeMdV2(msg.media_text);
+   const text = escapeMdV2(msg.media_text);
 
-    switch (msg.media_type) {
-      case "photo":
-        await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-        break;
-      case "video":
-        await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-        break;
-      case "audio":
-        await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-        break;
-      case "voice":
-        await bot.sendVoice(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
-        break;
-      case "video_note":
-        await bot.sendVideoNote(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
-        break;
-      default:
-        if (msg.media_url?.startsWith("http")) {
-          await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'MarkdownV2' });
-        } else {
-          await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
-        }
-        break;
+switch (msg.media_type) {
+  case "photo":
+    await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
+    break;
+  case "video":
+    await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
+    break;
+  case "audio":
+    await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
+    break;
+  case "voice":
+    await bot.sendVoice(canalId, msg.media_url);
+    if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
+    break;
+  case "video_note":
+    await bot.sendVideoNote(canalId, msg.media_url);
+    if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
+    break;
+  default:
+    if (msg.media_url?.startsWith("http")) {
+      await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'MarkdownV2' });
+    } else {
+      await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
     }
+    break;
+}
+
 
     // Insertion sécurisée dans message_logs
     await pool.query(
