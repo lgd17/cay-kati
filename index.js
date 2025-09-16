@@ -1815,3 +1815,93 @@ bot.on("message", async (msg) => {
     delete addStates2[chatId];
   }
 });
+
+
+
+
+/* escapeMdV2 comme avant */
+function escapeMdV2(text) {
+  if (!text) return "";
+  if (/https?:\/\/|t\.me/.test(text)) return text;
+  return text
+    .replace(/#/g, "\\#")
+    .replace(/\+/g, "\\+")
+    .replace(/-/g, "\\-")
+    .replace(/=/g, "\\=")
+    .replace(/\|/g, "\\|")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/!/g, "\\!");
+}
+
+async function sendMediaPreview(targetId, msg) {
+  const text = escapeMdV2(msg.media_text || "");
+
+  try {
+    switch (msg.media_type) {
+      case "photo":
+        await bot.sendPhoto(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        break;
+      case "video":
+        await bot.sendVideo(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        break;
+      case "audio":
+        await bot.sendAudio(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        break;
+      case "voice":
+        await bot.sendVoice(targetId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+        break;
+      case "video_note":
+        await bot.sendVideoNote(targetId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+        break;
+      default:
+        if (msg.media_url?.startsWith("http")) {
+          await bot.sendMessage(targetId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: "MarkdownV2" });
+        } else {
+          await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+        }
+        break;
+    }
+    return true;
+  } catch (err) {
+    console.error(`❌ Erreur envoi msg ${msg.id}:`, err.message);
+    await bot.sendMessage(targetId, `❌ Erreur msg ${msg.id}: ${err.message}`);
+    return false;
+  }
+}
+
+// Commande Telegram
+bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const limit = match[1] ? parseInt(match[1], 10) : 5; // par défaut 5 messages max
+
+  await bot.sendMessage(chatId, `⏳ Test des messages fixes (max ${limit})...`);
+
+  try {
+    // Table message_fixes
+    const res1 = await pool.query(
+      `SELECT * FROM message_fixes ORDER BY id ASC LIMIT $1`,
+      [limit]
+    );
+    for (const row of res1.rows) {
+      await sendMediaPreview(chatId, row);
+    }
+
+    // Table message_fixes2
+    const res2 = await pool.query(
+      `SELECT * FROM message_fixes2 ORDER BY id ASC LIMIT $1`,
+      [limit]
+    );
+    for (const row of res2.rows) {
+      await sendMediaPreview(chatId, row);
+    }
+
+    await bot.sendMessage(chatId, `✅ Test terminé, ${res1.rowCount + res2.rowCount} messages affichés.`);
+  } catch (err) {
+    console.error("Erreur /testfixes:", err);
+    await bot.sendMessage(chatId, "❌ Erreur lors du test : " + err.message);
+  }
+});
+
