@@ -21,7 +21,7 @@ async function loadMessages() {
     messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
     messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
     console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
-    await bot.sendMessage(ADMIN_ID, `📥 Messages Canal1 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+    if(bot) await bot.sendMessage(ADMIN_ID, `📥 Messages Canal1 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
   } catch (err) {
     console.error("❌ Erreur en chargeant les messages Canal1 :", err.message);
     if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
@@ -67,8 +67,16 @@ async function getDailyMessages(langMessages, type) {
 
 // =================== FONCTION ENVOI ===================
 
-async function sendMessage(msg, canalId) {
+async function sendMessage(msg, canalId, canalType = "canal1") {
   try {
+    // Vérifie que le message existe dans la table correspondante
+    const tableName = canalType === "canal1" ? "message_fixes" : "message_fixes2";
+    const exists = await pool.query(`SELECT 1 FROM ${tableName} WHERE id=$1`, [msg.id]);
+    if (exists.rowCount === 0) {
+      console.warn(`⚠️ Message ${msg.id} inexistant dans ${tableName}, envoi annulé.`);
+      return;
+    }
+
     // Fonction pour échapper les caractères spéciaux MarkdownV2
     function escapeMdV2(text) {
       if (!text) return "";
@@ -122,7 +130,12 @@ async function sendMessage(msg, canalId) {
         break;
     }
 
-    await pool.query("INSERT INTO message_logs(message_id) VALUES($1)", [msg.id]);
+    // Insertion sécurisée dans message_logs
+    await pool.query(
+      "INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING",
+      [msg.id]
+    );
+
     console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur canal ${canalId}`);
   } catch (err) {
     console.error(`❌ Erreur envoi message ${msg.id} canal ${canalId}:`, err.message);
@@ -149,7 +162,7 @@ async function sendScheduledMessages() {
       );
       if (sentCheck.rowCount > 0) continue;
 
-      await sendMessage(msg, CANAL_ID);
+      await sendMessage(msg, CANAL_ID, "canal1");
     }
   } catch (err) {
     console.error("❌ Erreur générale Canal1 :", err.message);
@@ -169,7 +182,7 @@ async function sendScheduledMessagesCanal2() {
     );
     if (sentCheck.rowCount > 0) continue;
 
-    await sendMessage(msg, CANAL2_ID);
+    await sendMessage(msg, CANAL2_ID, "canal2");
   }
 }
 
@@ -192,6 +205,6 @@ cron.schedule("* * * * *", async () => {
   await sendScheduledMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes.");
+console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes, sécurisé foreign key et anti-doublon.");
 
 module.exports = { loadMessages, sendScheduledMessages };
