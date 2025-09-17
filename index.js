@@ -1819,48 +1819,33 @@ bot.on("message", async (msg) => {
 
 
 
-/* escapeMdV2 comme avant */
-function escapeMdV2(text) {
-  if (!text) return "";
-  if (/https?:\/\/|t\.me/.test(text)) return text;
-  return text
-    .replace(/#/g, "\\#")
-    .replace(/\+/g, "\\+")
-    .replace(/-/g, "\\-")
-    .replace(/=/g, "\\=")
-    .replace(/\|/g, "\\|")
-    .replace(/\{/g, "\\{")
-    .replace(/\}/g, "\\}")
-    .replace(/!/g, "\\!");
-}
-
-async function sendMediaPreview(targetId, msg) {
-  const text = escapeMdV2(msg.media_text || "");
+async function sendMediaPreviewHTML(targetId, msg) {
+  const text = msg.media_text || ""; // HTML prêt à l'emploi
 
   try {
     switch (msg.media_type) {
       case "photo":
-        await bot.sendPhoto(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        await bot.sendPhoto(targetId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "video":
-        await bot.sendVideo(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        await bot.sendVideo(targetId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "audio":
-        await bot.sendAudio(targetId, msg.media_url, { caption: text, parse_mode: "MarkdownV2" });
+        await bot.sendAudio(targetId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "voice":
         await bot.sendVoice(targetId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "HTML" });
         break;
       case "video_note":
         await bot.sendVideoNote(targetId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+        if (msg.media_text) await bot.sendMessage(targetId, text, { parse_mode: "HTML" });
         break;
       default:
         if (msg.media_url?.startsWith("http")) {
-          await bot.sendMessage(targetId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: "MarkdownV2" });
+          await bot.sendMessage(targetId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: "HTML" });
         } else {
-          await bot.sendMessage(targetId, text, { parse_mode: "MarkdownV2" });
+          await bot.sendMessage(targetId, text, { parse_mode: "HTML" });
         }
         break;
     }
@@ -1872,7 +1857,7 @@ async function sendMediaPreview(targetId, msg) {
   }
 }
 
-// Commande Telegram
+// Commande Telegram : /testfixes
 bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const limit = match[1] ? parseInt(match[1], 10) : 5; // par défaut 5 messages max
@@ -1886,7 +1871,7 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
       [limit]
     );
     for (const row of res1.rows) {
-      await sendMediaPreview(chatId, row);
+      await sendMediaPreviewHTML(chatId, row);
     }
 
     // Table message_fixes2
@@ -1895,7 +1880,7 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
       [limit]
     );
     for (const row of res2.rows) {
-      await sendMediaPreview(chatId, row);
+      await sendMediaPreviewHTML(chatId, row);
     }
 
     await bot.sendMessage(chatId, `✅ Test terminé, ${res1.rowCount + res2.rowCount} messages affichés.`);
@@ -1904,4 +1889,5 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
     await bot.sendMessage(chatId, "❌ Erreur lors du test : " + err.message);
   }
 });
+
 
