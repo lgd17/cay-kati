@@ -1,6 +1,6 @@
 // autoSend.js
-const { pool } = require("./db"); 
-const bot = require("./bot"); 
+const { pool } = require("./db");
+const bot = require("./bot");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
 
@@ -8,41 +8,48 @@ const CANAL_ID = process.env.CANAL_ID;      // Canal principal (rotation FR/EN)
 const CANAL2_ID = process.env.CANAL2_ID;    // Deuxième canal (2 messages fixes)
 const ADMIN_ID = process.env.ADMIN_ID;
 
-let messagesFR = [];
-let messagesEN = [];
-let messagesCanal2 = [];
+// =================== CACHE ===================
+let cache = {
+  messagesFR: [],
+  messagesEN: [],
+  messagesCanal2: [],
+  lastRefresh: null
+};
 
-// =================== CHARGEMENT MESSAGES ===================
+// =================== FONCTIONS CHARGEMENT ===================
 
 // Canal principal
 async function loadMessages() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
-    messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
-    messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
-    console.log(`📥 ${messagesFR.length} messages FR et ${messagesEN.length} messages EN chargés.`);
-    if(bot) await bot.sendMessage(ADMIN_ID, `📥 Messages Canal1 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+    cache.messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
+    cache.messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
+    cache.lastRefresh = Date.now();
+
+    console.log(`📥 ${cache.messagesFR.length} messages FR et ${cache.messagesEN.length} messages EN rechargés.`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
   } catch (err) {
     console.error("❌ Erreur en chargeant les messages Canal1 :", err.message);
-    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
   }
 }
 
-// Canal 2
+// Canal2
 async function loadMessagesCanal2() {
   try {
     const res = await pool.query("SELECT * FROM message_fixes2 ORDER BY id");
-    messagesCanal2 = res.rows;
-    console.log(`📥 ${messagesCanal2.length} messages Canal2 chargés.`);
-    if(bot) await bot.sendMessage(ADMIN_ID, `📥 Messages Canal2 chargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+    cache.messagesCanal2 = res.rows;
+    cache.lastRefresh = Date.now();
+
+    console.log(`📥 ${cache.messagesCanal2.length} messages Canal2 rechargés.`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
   } catch (err) {
     console.error("❌ Erreur en chargeant les messages Canal2 :", err.message);
-    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal2 : ${err.message}`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal2 : ${err.message}`);
   }
 }
 
-// =================== ROTATION JOURNALIERES ===================
-
+// =================== ROTATION JOURNALIERE ===================
 async function getDailyMessages(langMessages, type) {
   if (!langMessages.length) return [];
 
@@ -65,8 +72,7 @@ async function getDailyMessages(langMessages, type) {
   return daily;
 }
 
-// =================== FONCTION ENVOI ===================
-
+// =================== ENVOI DES MESSAGES ===================
 async function sendMessage(msg, canalId, canalType = "canal1") {
   try {
     const tableName = canalType === "canal1" ? "message_fixes" : "message_fixes2";
@@ -80,27 +86,27 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
 
     switch (msg.media_type) {
       case "photo":
-        await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "video":
-        await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "audio":
-        await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: "HTML" });
         break;
       case "voice":
         await bot.sendVoice(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: "HTML" });
         break;
       case "video_note":
         await bot.sendVideoNote(canalId, msg.media_url);
-        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: "HTML" });
         break;
       default:
         if (msg.media_url?.startsWith("http")) {
-          await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
+          await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: "HTML" });
         } else {
-          await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+          await bot.sendMessage(canalId, text, { parse_mode: "HTML" });
         }
         break;
     }
@@ -113,19 +119,17 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
     console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur canal ${canalId}`);
   } catch (err) {
     console.error(`❌ Erreur envoi message ${msg.id} canal ${canalId}:`, err.message);
-    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id} canal ${canalId}: ${err.message}`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id} canal ${canalId}: ${err.message}`);
   }
 }
 
-// =================== ENVOI AUTOMATIQUE ===================
-
-// Canal principal (rotation)
+// =================== ENVOI AUTO ===================
 async function sendScheduledMessages() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
 
   try {
-    const dailyFR = await getDailyMessages(messagesFR, "fr");
-    const dailyEN = await getDailyMessages(messagesEN, "en");
+    const dailyFR = await getDailyMessages(cache.messagesFR, "fr");
+    const dailyEN = await getDailyMessages(cache.messagesEN, "en");
     const dailyMessages = [...dailyFR, ...dailyEN];
 
     const toSend = dailyMessages.filter(m => m && m.heures?.split(",").map(h => h.trim()).includes(currentTime));
@@ -135,19 +139,18 @@ async function sendScheduledMessages() {
         [msg.id]
       );
       if (sentCheck.rowCount > 0) continue;
-
       await sendMessage(msg, CANAL_ID, "canal1");
     }
   } catch (err) {
     console.error("❌ Erreur générale Canal1 :", err.message);
-    if(bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur générale Canal1 : ${err.message}`);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
   }
 }
 
-// Canal2 (2 messages fixes, pas de rotation)
 async function sendScheduledMessagesCanal2() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
-  for (const msg of messagesCanal2) {
+
+  for (const msg of cache.messagesCanal2) {
     if (!msg.heures?.split(",").map(h => h.trim()).includes(currentTime)) continue;
 
     const sentCheck = await pool.query(
@@ -162,20 +165,31 @@ async function sendScheduledMessagesCanal2() {
 
 // =================== CRON ===================
 
+// Chargement initial
 loadMessages();
 loadMessagesCanal2();
 
-cron.schedule("45 5 * * *", async () => {
-  console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé...");
+// rechargement a 05:45 minutes
+cron.schedule("45 5 * * *", async () => { 
+  console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé..."); 
   await loadMessages();
   await loadMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
+// Refresh toutes les 30 minutes
+cron.schedule("*/30 * * * *", async () => {
+  console.log("♻️ Refresh auto des messages (cache Supabase).");
+  await loadMessages();
+  await loadMessagesCanal2();
+}, { timezone: "Africa/Lome" });
+
+// Vérification chaque minute
 cron.schedule("* * * * *", async () => {
   await sendScheduledMessages();
   await sendScheduledMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes (HTML, sécurisé et anti-doublon).");
+console.log("✅ autoSend.js lancé avec cache + refresh optimisé.");
 
 module.exports = { loadMessages, sendScheduledMessages };
+
