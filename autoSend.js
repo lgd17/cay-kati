@@ -69,7 +69,6 @@ async function getDailyMessages(langMessages, type) {
 
 async function sendMessage(msg, canalId, canalType = "canal1") {
   try {
-    // Vérifie que le message existe dans la table correspondante
     const tableName = canalType === "canal1" ? "message_fixes" : "message_fixes2";
     const exists = await pool.query(`SELECT 1 FROM ${tableName} WHERE id=$1`, [msg.id]);
     if (exists.rowCount === 0) {
@@ -77,68 +76,35 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
       return;
     }
 
-function escapeMdV2(text) {
-  if (!text) return "";
+    const text = msg.media_text || "";
 
-  // Si c’est un lien (http, https, t.me...), ne rien toucher
-  if (/https?:\/\/|t\.me/.test(text)) return text;
-
-  return text
-    // Garder gras (*) et italique (_)
-    //.replace(/_/g, "\\_")
-    //.replace(/\*/g, "\\*")
-    // Garder les liens [texte](url)
-    //.replace(/\[/g, "\\[")
-    //.replace(/]/g, "\\]")
-    //.replace(/\(/g, "\\(")
-    //.replace(/\)/g, "\\)")
-    // Garder la citation >
-    //.replace(/>/g, "\\>")
-    // Échapper uniquement les caractères Telegram problématiques
-    .replace(/#/g, "\\#")
-    .replace(/\+/g, "\\+")
-    .replace(/-/g, "\\-")
-    .replace(/=/g, "\\=")
-    .replace(/\|/g, "\\|")
-    .replace(/\{/g, "\\{")
-    .replace(/\}/g, "\\}")
-    .replace(/!/g, "\\!")
-    // Attention au point qui bloque MarkdownV2
-    .replace(/\./g, "\\.");
-}
-
-
-   const text = escapeMdV2(msg.media_text);
-
-switch (msg.media_type) {
-  case "photo":
-    await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-    break;
-  case "video":
-    await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-    break;
-  case "audio":
-    await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'MarkdownV2' });
-    break;
-  case "voice":
-    await bot.sendVoice(canalId, msg.media_url);
-    if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
-    break;
-  case "video_note":
-    await bot.sendVideoNote(canalId, msg.media_url);
-    if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
-    break;
-  default:
-    if (msg.media_url?.startsWith("http")) {
-      await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'MarkdownV2' });
-    } else {
-      await bot.sendMessage(canalId, text, { parse_mode: 'MarkdownV2' });
+    switch (msg.media_type) {
+      case "photo":
+        await bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        break;
+      case "video":
+        await bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        break;
+      case "audio":
+        await bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: 'HTML' });
+        break;
+      case "voice":
+        await bot.sendVoice(canalId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+        break;
+      case "video_note":
+        await bot.sendVideoNote(canalId, msg.media_url);
+        if (msg.media_text) await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+        break;
+      default:
+        if (msg.media_url?.startsWith("http")) {
+          await bot.sendMessage(canalId, `${text}\n🔗 ${msg.media_url}`, { parse_mode: 'HTML' });
+        } else {
+          await bot.sendMessage(canalId, text, { parse_mode: 'HTML' });
+        }
+        break;
     }
-    break;
-}
 
-
-    // Insertion sécurisée dans message_logs
     await pool.query(
       "INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING",
       [msg.id]
@@ -162,7 +128,7 @@ async function sendScheduledMessages() {
     const dailyEN = await getDailyMessages(messagesEN, "en");
     const dailyMessages = [...dailyFR, ...dailyEN];
 
-    const toSend = dailyMessages.filter(m => m && m.heures?.split(",").includes(currentTime));
+    const toSend = dailyMessages.filter(m => m && m.heures?.split(",").map(h => h.trim()).includes(currentTime));
     for (const msg of toSend) {
       const sentCheck = await pool.query(
         "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
@@ -182,7 +148,7 @@ async function sendScheduledMessages() {
 async function sendScheduledMessagesCanal2() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
   for (const msg of messagesCanal2) {
-    if (!msg.heures?.split(",").includes(currentTime)) continue;
+    if (!msg.heures?.split(",").map(h => h.trim()).includes(currentTime)) continue;
 
     const sentCheck = await pool.query(
       "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
@@ -196,23 +162,20 @@ async function sendScheduledMessagesCanal2() {
 
 // =================== CRON ===================
 
-// Charger messages au démarrage
 loadMessages();
 loadMessagesCanal2();
 
-// Recharger messages chaque jour à 05:45 Lomé
 cron.schedule("45 5 * * *", async () => {
   console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé...");
   await loadMessages();
   await loadMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-// Vérifier chaque minute pour envoyer les messages
 cron.schedule("* * * * *", async () => {
   await sendScheduledMessages();
   await sendScheduledMessagesCanal2();
 }, { timezone: "Africa/Lome" });
 
-console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes, sécurisé foreign key et anti-doublon.");
+console.log("✅ autoSend.js lancé : rotation FR/EN + Canal2 2 messages fixes (HTML, sécurisé et anti-doublon).");
 
 module.exports = { loadMessages, sendScheduledMessages };
