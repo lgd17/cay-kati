@@ -177,7 +177,7 @@ cron.schedule("45 5 * * *", async () => {
 }, { timezone: "Africa/Lome" });
 
 // Refresh toutes les 5 minutes
-cron.schedule("*/5 * * * *", async () => {
+cron.schedule("*/30 * * * *", async () => {
   console.log("♻️ Refresh auto des messages (cache Supabase).");
   await loadMessages();
   await loadMessagesCanal2();
