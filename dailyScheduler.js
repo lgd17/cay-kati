@@ -1,43 +1,44 @@
 // dailyScheduler.js
 const schedule = require("node-schedule");
-const { pool } = require("./db"); 
-const bot = require("./bot"); 
+const { pool } = require("./db");
+const bot = require("./bot");
 const dayjs = require("dayjs");
 
-const CANAL_ID = process.env.CANAL_ID; 
+const CANAL1_ID = process.env.CANAL_ID;
+const CANAL2_ID = process.env.CANAL2_ID;
 
-// Fonction d'envoi avec parse HTML
-async function sendTelegramMessage(msg) {
+// Fonction d'envoi (support texte + média)
+async function sendTelegramMessage(canal, msg) {
   const options = { parse_mode: "HTML" };
 
   switch (msg.media_type) {
     case "photo":
-      await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.contenu, ...options });
+      await bot.sendPhoto(canal, msg.media_url, { caption: msg.contenu, ...options });
       break;
     case "video":
-      await bot.sendVideo(CANAL_ID, msg.media_url, { caption: msg.contenu, ...options });
+      await bot.sendVideo(canal, msg.media_url, { caption: msg.contenu, ...options });
       break;
     case "voice":
-      await bot.sendVoice(CANAL_ID, msg.media_url, { caption: msg.contenu, ...options });
+      await bot.sendVoice(canal, msg.media_url, { caption: msg.contenu, ...options });
       break;
     case "audio":
-      await bot.sendAudio(CANAL_ID, msg.media_url, { caption: msg.contenu, ...options });
+      await bot.sendAudio(canal, msg.media_url, { caption: msg.contenu, ...options });
       break;
     case "video_note":
-      await bot.sendVideoNote(CANAL_ID, msg.media_url);
+      await bot.sendVideoNote(canal, msg.media_url);
       if (msg.contenu) {
-        await bot.sendMessage(CANAL_ID, msg.contenu, options);
+        await bot.sendMessage(canal, msg.contenu, options);
       }
       break;
     default:
-      await bot.sendMessage(CANAL_ID, msg.contenu, options);
+      await bot.sendMessage(canal, msg.contenu, options);
   }
 }
 
-// Récupérer les 14 messages du jour avec permutation
-async function getMessagesOfDay(dayOfWeek) {
+// Fonction pour récupérer 14 messages aléatoires du jour
+async function getMessagesOfDay(tableName, dayOfWeek) {
   const { rows } = await pool.query(
-    `SELECT * FROM messages_journalier
+    `SELECT * FROM ${tableName}
      WHERE day_of_week = $1
      ORDER BY RANDOM()
      LIMIT 14`,
@@ -46,13 +47,13 @@ async function getMessagesOfDay(dayOfWeek) {
   return rows;
 }
 
-// Planifier 2 messages par heure
-async function scheduleDailyMessages() {
-  const today = dayjs().day(); // 0 = Dimanche ... 6 = Samedi
-  const messages = await getMessagesOfDay(today);
+// Planification des messages pour un canal
+async function scheduleDailyMessages(tableName, canalId, canalKey) {
+  const today = dayjs().day(); // 0=Dimanche ... 6=Samedi
+  const messages = await getMessagesOfDay(tableName, today);
 
   if (!messages.length) {
-    console.log("⚠️ Aucun message trouvé pour aujourd'hui");
+    console.log(`⚠️ Aucun message trouvé pour aujourd'hui dans ${canalKey}`);
     return;
   }
 
@@ -63,21 +64,23 @@ async function scheduleDailyMessages() {
 
     schedule.scheduleJob(sendTime.toDate(), async () => {
       try {
-        await sendTelegramMessage(messages[i]);
-        if (messages[i + 1]) await sendTelegramMessage(messages[i + 1]);
-        console.log(`✅ Envoi messages ${i + 1} et ${i + 2} à ${sendTime.format("HH:mm")}`);
+        await sendTelegramMessage(canalId, messages[i]);
+        if (messages[i + 1]) await sendTelegramMessage(canalId, messages[i + 1]);
+        console.log(`✅ ${canalKey} → messages ${i + 1} et ${i + 2} envoyés à ${sendTime.format("HH:mm")}`);
       } catch (err) {
-        console.error("❌ Erreur envoi messages :", err.message || err);
+        console.error(`❌ Erreur envoi ${canalKey} :`, err.message || err);
       }
     });
   }
 }
 
-// Cron : chaque jour à minuit → planifier les messages du jour
+// Cron : chaque jour à minuit → préparer Canal 1 et Canal 2
 schedule.scheduleJob("0 0 * * *", () => {
-  console.log("🔄 Préparation des messages pour la nouvelle journée");
-  scheduleDailyMessages();
+  console.log("🔄 Préparation des messages pour les deux canaux");
+  scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
+  scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
 });
 
-// Exécuter aussi au démarrage
-scheduleDailyMessages();
+// Démarrage immédiat au lancement
+scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
+scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
