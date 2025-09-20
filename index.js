@@ -6,6 +6,7 @@ require("./pingCron");
 require("./autoSend");
 require("./autoSender");
 require('./cleanLogs');
+require('./dailyScheduler')
 const { ping } = require("./pingServer")
 
 // Forcer l’environnement à utiliser l’heure de Lomé
