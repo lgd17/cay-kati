@@ -35,21 +35,21 @@ async function sendTelegramMessage(canal, msg) {
   }
 }
 
-// Fonction pour récupérer 14 messages aléatoires du jour
+// Fonction pour récupérer 30 messages max
 async function getMessagesOfDay(tableName, dayOfWeek) {
   const { rows } = await pool.query(
     `SELECT * FROM ${tableName}
      WHERE day_of_week = $1
      ORDER BY RANDOM()
-     LIMIT 14`,
+     LIMIT 30`,
     [dayOfWeek]
   );
   return rows;
 }
 
-// Planification des messages pour un canal
+// Planification
 async function scheduleDailyMessages(tableName, canalId, canalKey) {
-  const today = dayjs().day(); // 0=Dimanche ... 6=Samedi
+  const today = dayjs().day();
   const messages = await getMessagesOfDay(tableName, today);
 
   if (!messages.length) {
@@ -57,10 +57,10 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
     return;
   }
 
-  // Diviser les 14 messages en lots de 2 → 7 créneaux horaires
+  // Diviser en lots de 2 messages → 15 créneaux horaires
   for (let i = 0; i < messages.length; i += 2) {
     const hourOffset = Math.floor(i / 2);
-    const sendTime = dayjs().hour(9 + hourOffset).minute(0).second(0); // 09:00 → 15:00
+    const sendTime = dayjs().hour(8 + hourOffset).minute(0).second(0); // de 08:00 à 22:00
 
     schedule.scheduleJob(sendTime.toDate(), async () => {
       try {
@@ -73,6 +73,7 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
     });
   }
 }
+
 
 // Cron : chaque jour à minuit → préparer Canal 1 et Canal 2
 schedule.scheduleJob("0 0 * * *", () => {
