@@ -179,12 +179,16 @@ bot.onText(/\/getid/, async (msg) => {
 // ====================== AJOUT MANUEL DE PRONO ======================
 
 // --- Commande /ajouter_prono ---
+// ====================== AJOUT MANUEL DE PRONO ======================
+
+// --- Commande /ajouter_prono ---
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   if (!ADMIN_IDS.includes(userId))
     return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
 
+  // Initialisation de l’état
   pendingCoupon[chatId] = {
     step: "awaiting_date",
     content: "",
@@ -194,6 +198,12 @@ bot.onText(/\/ajouter_prono/, (msg) => {
     mediaUrl: null
   };
 
+  // Timeout auto-annulation après 10 minutes
+  pendingCoupon[chatId].timeout = setTimeout(() => {
+    delete pendingCoupon[chatId];
+    bot.sendMessage(chatId, "⏰ Temps écoulé, prono annulé automatiquement.");
+  }, 10 * 60 * 1000);
+
   bot.sendMessage(chatId, "📅 Pour quelle date est ce prono ? Ex: 2025-09-10 ou tape /today");
 });
 
@@ -201,7 +211,8 @@ bot.onText(/\/ajouter_prono/, (msg) => {
 bot.onText(/\/today/, (msg) => {
   const chatId = msg.chat.id;
   const state = pendingCoupon[chatId];
-  if (!state || state.step !== "awaiting_date") return;
+  if (!state) return bot.sendMessage(chatId, "⚠️ Tu dois d'abord lancer /ajouter_prono.");
+  if (state.step !== "awaiting_date") return;
 
   const today = new Date();
   today.setUTCHours(0,0,0,0);
@@ -231,12 +242,16 @@ bot.on("message", async (msg) => {
 
   // --- Contenu ---
   if (state.step === "awaiting_content") {
-    state.content = msg.text;
+    if (!msg.text || msg.text.trim().length < 5) {
+      return bot.sendMessage(chatId, "⚠️ Le texte du prono est trop court.");
+    }
+
+    state.content = msg.text.trim();
     state.step = "awaiting_confirmation";
 
-    const recap = `📝 *Récapitulatif du prono:*\n📅 Date: *${state.date.toISOString().slice(0,10)}*\n✍️ Contenu: *${state.content}*\n\nSouhaites-tu continuer ?`;
+    const recap = `📝 <b>Récapitulatif du prono :</b>\n📅 Date: <b>${state.date.toISOString().slice(0,10)}</b>\n✍️ Contenu: <i>${state.content}</i>\n\nSouhaites-tu continuer ?`;
     return bot.sendMessage(chatId, recap, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
           [{ text: "✅ Confirmer", callback_data: "confirm_prono" }],
@@ -251,24 +266,68 @@ bot.on("message", async (msg) => {
     let mediaUrl = null;
     let mediaType = null;
 
-    if (msg.photo) { mediaUrl = msg.photo.at(-1).file_id; mediaType = "photo"; }
-    else if (msg.video) { mediaUrl = msg.video.file_id; mediaType = "video"; }
-    else if (msg.voice) { mediaUrl = msg.voice.file_id; mediaType = "voice"; }
-    else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
+    if (msg.photo) {
+      mediaUrl = msg.photo.at(-1).file_id;
+      mediaType = "photo";
+    }
+    else if (msg.video) {
+      mediaUrl = msg.video.file_id;
+      mediaType = "video";
+    }
+    else if (msg.voice) {
+      mediaUrl = msg.voice.file_id;
+      mediaType = "voice";
+    }
+    else if (msg.audio) {
+      mediaUrl = msg.audio.file_id;
+      mediaType = "audio";
+    }
+    else if (msg.video_note) {
+      mediaUrl = msg.video_note.file_id;
+      mediaType = "video_note";
+    }
+    else if (msg.document) {
+      mediaUrl = msg.document.file_id;
+      mediaType = "document";
+    }
+    else if (msg.text && msg.text.startsWith("http")) {
+      mediaUrl = msg.text.trim();
+      mediaType = "url";
+    }
 
     if (mediaUrl) {
       state.mediaUrl = mediaUrl;
       state.mediaType = mediaType;
 
-      const result = await insertManualCoupon(state.content, state.mediaUrl, state.mediaType, state.date, state.type);
-      if (result.success) await bot.sendMessage(chatId, `✅ Coupon *${state.type.toUpperCase()}* ajouté pour le ${state.date.toISOString().slice(0,10)}`, { parse_mode: "Markdown" });
-      else await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+      clearTimeout(state.timeout); // on annule le timer d’expiration
+
+      const result = await insertManualCoupon(
+        state.content,
+        state.mediaUrl,
+        state.mediaType,
+        state.date,
+        state.type
+      );
+
+      if (result.success) {
+        await bot.sendMessage(
+          chatId,
+          `✅ Coupon <b>${state.type.toUpperCase()}</b> ajouté pour le ${state.date.toISOString().slice(0,10)}`,
+          { parse_mode: "HTML" }
+        );
+      } else {
+        await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+      }
 
       delete pendingCoupon[chatId];
       return;
     }
 
-    return bot.sendMessage(chatId, "❌ Envoie une *photo*, *vidéo*, *note vocale* ou *audio*, ou tape /skip.", { parse_mode: "Markdown" });
+    return bot.sendMessage(
+      chatId,
+      "❌ Envoie une *photo*, *vidéo*, *note vocale*, *audio*, *vidéo note*, *document* ou un *lien URL*, ou tape /skip.",
+      { parse_mode: "Markdown" }
+    );
   }
 });
 
@@ -291,6 +350,7 @@ bot.on("callback_query", async (query) => {
   }
 
   if (query.data === "cancel_prono") {
+    clearTimeout(state.timeout);
     delete pendingCoupon[chatId];
     await bot.sendMessage(chatId, "❌ Ajout du prono annulé.");
   }
@@ -298,7 +358,7 @@ bot.on("callback_query", async (query) => {
   if (state.step === "awaiting_type" && (query.data === "type_gratuit" || query.data === "type_premium")) {
     state.type = query.data === "type_gratuit" ? "gratuit" : "premium";
     state.step = "awaiting_media";
-    await bot.sendMessage(chatId, "📎 Envoie maintenant une *photo*, *vidéo*, *note vocale* ou *audio* pour ce prono, ou tape /skip.", { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📎 Envoie maintenant une *photo*, *vidéo*, *note vocale*, *audio*, *vidéo note*, *document* ou un *lien URL* pour ce prono, ou tape /skip.", { parse_mode: "Markdown" });
   }
 
   await bot.answerCallbackQuery(query.id);
@@ -310,12 +370,18 @@ bot.onText(/\/skip/, async (msg) => {
   const state = pendingCoupon[chatId];
   if (!state || state.step !== "awaiting_media") return;
 
+  clearTimeout(state.timeout); // on annule le timer d’expiration
+
   const result = await insertManualCoupon(state.content, null, null, state.date, state.type);
-  if (result.success) await bot.sendMessage(chatId, `✅ Coupon *${state.type.toUpperCase()}* ajouté pour le ${state.date.toISOString().slice(0,10)}`, { parse_mode: "Markdown" });
-  else await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+  if (result.success) {
+    await bot.sendMessage(chatId, `✅ Coupon <b>${state.type.toUpperCase()}</b> ajouté pour le ${state.date.toISOString().slice(0,10)}`, { parse_mode: "HTML" });
+  } else {
+    await bot.sendMessage(chatId, "❌ Erreur : " + result.error.message);
+  }
 
   delete pendingCoupon[chatId];
 });
+
 
                     //=== COMMANDE /voir_pronos ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
@@ -350,10 +416,25 @@ bot.onText(/\/voir_pronos/, async (msg) => {
         ],
       };
 
-      if (row.media_url && row.media_type === "photo") {
-        await bot.sendPhoto(chatId, row.media_url, { caption, reply_markup: keyboard });
-      } else if (row.media_url && row.media_type === "video") {
-        await bot.sendVideo(chatId, row.media_url, { caption, reply_markup: keyboard });
+      if (row.media_url) {
+        if (row.media_type === "photo") {
+          await bot.sendPhoto(chatId, row.media_url, { caption, reply_markup: keyboard });
+        } else if (row.media_type === "video") {
+          await bot.sendVideo(chatId, row.media_url, { caption, reply_markup: keyboard });
+        } else if (row.media_type === "voice") {
+          await bot.sendVoice(chatId, row.media_url, { caption, reply_markup: keyboard });
+        } else if (row.media_type === "audio") {
+          await bot.sendAudio(chatId, row.media_url, { caption, reply_markup: keyboard });
+        } else if (row.media_type === "video_note") {
+          await bot.sendVideoNote(chatId, row.media_url);
+          await bot.sendMessage(chatId, caption, { reply_markup: keyboard });
+        } else if (row.media_type === "document") {
+          await bot.sendDocument(chatId, row.media_url, { caption, reply_markup: keyboard });
+        } else if (row.media_type === "url") {
+          await bot.sendMessage(chatId, `${caption}\n🔗 ${row.media_url}`, { reply_markup: keyboard });
+        } else {
+          await bot.sendMessage(chatId, caption, { reply_markup: keyboard });
+        }
       } else {
         await bot.sendMessage(chatId, caption, { reply_markup: keyboard });
       }
@@ -379,7 +460,6 @@ bot.on("callback_query", async (query) => {
     // --- Supprimer ---
     if (data.startsWith("delete_")) {
       const id = data.split("_")[1];
-
       const keyboard = {
         inline_keyboard: [
           [
@@ -389,11 +469,7 @@ bot.on("callback_query", async (query) => {
         ],
       };
 
-      if (query.message.text) {
-        await bot.editMessageReplyMarkup(keyboard, { chat_id: chatId, message_id: msgId });
-      } else {
-        await bot.sendMessage(chatId, `❌ Confirmer la suppression du prono ${id}:`, { reply_markup: keyboard });
-      }
+      await bot.sendMessage(chatId, `❌ Confirmer la suppression du prono ${id}:`, { reply_markup: keyboard });
       return;
     }
 
@@ -434,12 +510,18 @@ bot.on("callback_query", async (query) => {
       if (!prono) return;
 
       const caption = `🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo")
-        await bot.sendPhoto(chatId, prono.media_url, { caption });
-      else if (prono.media_url && prono.media_type === "video")
-        await bot.sendVideo(chatId, prono.media_url, { caption });
-      else await bot.sendMessage(chatId, caption);
-
+      if (prono.media_url) {
+        if (prono.media_type === "photo") await bot.sendPhoto(chatId, prono.media_url, { caption });
+        else if (prono.media_type === "video") await bot.sendVideo(chatId, prono.media_url, { caption });
+        else if (prono.media_type === "voice") await bot.sendVoice(chatId, prono.media_url, { caption });
+        else if (prono.media_type === "audio") await bot.sendAudio(chatId, prono.media_url, { caption });
+        else if (prono.media_type === "video_note") await bot.sendVideoNote(chatId, prono.media_url);
+        else if (prono.media_type === "document") await bot.sendDocument(chatId, prono.media_url, { caption });
+        else if (prono.media_type === "url") await bot.sendMessage(chatId, `${caption}\n🔗 ${prono.media_url}`);
+        else await bot.sendMessage(chatId, caption);
+      } else {
+        await bot.sendMessage(chatId, caption);
+      }
       return;
     }
 
@@ -453,11 +535,21 @@ bot.on("callback_query", async (query) => {
       if (!CANAL_ID) return bot.sendMessage(chatId, "❌ CANAL_ID non défini.");
 
       const caption = `📢 PRONOSTIC DU JOUR\n\n🆔 ${prono.id}\n📅 ${prono.date}\n📝 ${prono.content}`;
-      if (prono.media_url && prono.media_type === "photo")
-        await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
-      else if (prono.media_url && prono.media_type === "video")
-        await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
-      else await bot.sendMessage(CANAL_ID, caption);
+      if (prono.media_url) {
+        if (prono.media_type === "photo") await bot.sendPhoto(CANAL_ID, prono.media_url, { caption });
+        else if (prono.media_type === "video") await bot.sendVideo(CANAL_ID, prono.media_url, { caption });
+        else if (prono.media_type === "voice") await bot.sendVoice(CANAL_ID, prono.media_url, { caption });
+        else if (prono.media_type === "audio") await bot.sendAudio(CANAL_ID, prono.media_url, { caption });
+        else if (prono.media_type === "video_note") {
+          await bot.sendVideoNote(CANAL_ID, prono.media_url);
+          await bot.sendMessage(CANAL_ID, caption);
+        }
+        else if (prono.media_type === "document") await bot.sendDocument(CANAL_ID, prono.media_url, { caption });
+        else if (prono.media_type === "url") await bot.sendMessage(CANAL_ID, `${caption}\n🔗 ${prono.media_url}`);
+        else await bot.sendMessage(CANAL_ID, caption);
+      } else {
+        await bot.sendMessage(CANAL_ID, caption);
+      }
 
       await bot.sendMessage(chatId, `✅ Prono ${id} publié dans le canal.`);
       return;
@@ -482,7 +574,7 @@ bot.on("message", async (msg) => {
     state.newContent = msg.text;
     state.step = "edit_media";
 
-    return bot.sendMessage(chatId, "📎 Envoie un nouveau média (*photo*, *vidéo*, *note vocale*, *audio*) ou tape /skip pour garder l'ancien.", { parse_mode: "Markdown" });
+    return bot.sendMessage(chatId, "📎 Envoie un nouveau média (*photo*, *vidéo*, *note vocale*, *audio*, *vidéo note*, *document*, *URL*) ou tape /skip pour garder l'ancien.", { parse_mode: "Markdown" });
   }
 
   // --- Étape média ---
@@ -494,6 +586,9 @@ bot.on("message", async (msg) => {
     else if (msg.video) { mediaUrl = msg.video.file_id; mediaType = "video"; }
     else if (msg.voice) { mediaUrl = msg.voice.file_id; mediaType = "voice"; }
     else if (msg.audio) { mediaUrl = msg.audio.file_id; mediaType = "audio"; }
+    else if (msg.video_note) { mediaUrl = msg.video_note.file_id; mediaType = "video_note"; }
+    else if (msg.document) { mediaUrl = msg.document.file_id; mediaType = "document"; }
+    else if (msg.text && msg.text.startsWith("http")) { mediaUrl = msg.text.trim(); mediaType = "url"; }
 
     if (mediaUrl) {
       state.newMediaUrl = mediaUrl;
@@ -525,7 +620,6 @@ bot.onText(/\/skip/, async (msg) => {
   await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour (média inchangé).`);
   delete editStates[chatId];
 });
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
