@@ -21,12 +21,6 @@ const adminId = process.env.TELEGRAM_ADMIN_ID;
 const channelId = process.env.TELEGRAM_CHANNEL_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
-// ====== CONFIGURATION ENV ======
-const port = process.env.PORT || 3000;
-const token = process.env.TELEGRAM_TOKEN;
-if (!token) throw new Error("❌ TELEGRAM_TOKEN non défini !");
-const baseUrl = process.env.BASE_URL; // ✅ ✅ ✅ à utiliser sur Render !
-if (!baseUrl) throw new Error("❌ BASE_URL manquant dans .env !");
 
 // ====== GESTION DES ÉTATS ======
 const pendingCoupon = {};
