@@ -1,12 +1,12 @@
 
 const schedule = require('node-schedule');
 const bot = require("./bot");
-require("./server");
 require("./pingCron");
 require("./autoSend");
 require("./autoSender");
 require('./cleanLogs');
 require('./dailyScheduler')
+const { app, bot } = require("./server");
 const { ping } = require("./pingServer")
 
 // Forcer l’environnement à utiliser l’heure de Lomé
@@ -16,10 +16,14 @@ const { pool, insertManualCoupon } = require("./db");
 
 const ADMIN_ID = process.env.ADMIN_ID;
 
+// ====== CONFIGURATION ENV ======
+const PORT = process.env.PORT || 3000;
 const CANAL_ID = process.env.CANAL_ID;
 const adminId = process.env.TELEGRAM_ADMIN_ID;
 const channelId = process.env.TELEGRAM_CHANNEL_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
+
+
 
 
 // ====== GESTION DES ÉTATS ======
