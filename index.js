@@ -2134,12 +2134,39 @@ bot.on("callback_query", async (query) => {
 
   if (data === "confirm_coupon") {
     try {
-      await pool.query(
-        `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_date, schedule_time) VALUES ($1,$2,$3,$4,$5)`,
-        [pending.content, pending.media_type, pending.media_url, pending.schedule_date, pending.schedule_time]
-      );
+      if (pending.editing) {
+        // Mode édition → UPDATE
+        await pool.query(
+          `UPDATE ${pending.table}
+           SET content=$1, media_type=$2, media_url=$3, schedule_date=$4, schedule_time=$5
+           WHERE id=$6`,
+          [
+            pending.content,
+            pending.media_type,
+            pending.media_url,
+            pending.schedule_date,
+            pending.schedule_time,
+            pending.id,
+          ]
+        );
 
-      await bot.sendMessage(chatId, "✅ Coupon enregistré avec succès !");
+        await bot.sendMessage(chatId, `✏️ Coupon #${pending.id} mis à jour avec succès !`);
+      } else {
+        // Mode ajout → INSERT
+        await pool.query(
+          `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_date, schedule_time)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [
+            pending.content,
+            pending.media_type,
+            pending.media_url,
+            pending.schedule_date,
+            pending.schedule_time,
+          ]
+        );
+
+        await bot.sendMessage(chatId, "✅ Nouveau coupon enregistré avec succès !");
+      }
     } catch (err) {
       console.error("❌ Erreur enregistrement coupon :", err);
       await bot.sendMessage(chatId, "❌ Une erreur est survenue lors de l'enregistrement.");
@@ -2153,3 +2180,159 @@ bot.on("callback_query", async (query) => {
     delete pendingCoupons[chatId];
   }
 });
+
+
+
+
+// ====================== LISTES DES COUPONS-FIXE ======================
+
+// --- COMMANDE /mes_coupons ---
+bot.onText(/\/mes_coupons/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (userId != process.env.ADMIN_ID) return;
+
+  try {
+    // Récupère 5 derniers coupons de chaque table
+    const res1 = await pool.query(
+      "SELECT * FROM scheduled_coupons ORDER BY id DESC LIMIT 5"
+    );
+    const res2 = await pool.query(
+      "SELECT * FROM scheduled_coupons_2 ORDER BY id DESC LIMIT 5"
+    );
+
+    // Fonction helper pour formater les messages
+    const sendCoupons = async (coupons, canal) => {
+      if (coupons.length === 0) {
+        return bot.sendMessage(chatId, `❌ Aucun coupon trouvé dans ${canal}.`);
+      }
+
+      for (let c of coupons) {
+        let text = `<b>📌 Coupon #${c.id} (${canal})</b>\n`;
+        text += `<b>Date :</b> ${c.schedule_date}\n`;
+        text += `<b>Heure :</b> ${c.schedule_time}\n`;
+        text += `<b>Texte :</b> ${c.content}\n`;
+        text += `<b>Média :</b> ${c.media_type || "Aucun"}\n`;
+
+        await bot.sendMessage(chatId, text, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✏️ Modifier", callback_data: `edit_${canal}_${c.id}` },
+                { text: "🚀 Publier", callback_data: `publish_${canal}_${c.id}` },
+              ],
+              [
+                { text: "🗑 Supprimer", callback_data: `delete_${canal}_${c.id}` },
+                { text: "🧪 Tester", callback_data: `test_${canal}_${c.id}` },
+              ],
+            ],
+          },
+        });
+      }
+    };
+
+    await sendCoupons(res1.rows, "CANAL1");
+    await sendCoupons(res2.rows, "CANAL2");
+
+  } catch (err) {
+    console.error("❌ Erreur récupération coupons :", err);
+    bot.sendMessage(chatId, "❌ Erreur lors de la récupération des coupons.");
+  }
+});
+
+// --- CALLBACK QUERY GESTION DES COUPONS ---
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const userId = query.from.id;
+
+  if (userId != process.env.ADMIN_ID) return;
+
+  const [action, canal, id] = data.split("_");
+  const table = canal === "CANAL1" ? "scheduled_coupons" : "scheduled_coupons_2";
+
+  try {
+    // Récupère le coupon ciblé
+    const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
+    if (res.rows.length === 0) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
+    }
+    const coupon = res.rows[0];
+
+    // --- ACTION : SUPPRIMER ---
+    if (action === "delete") {
+      await pool.query(`DELETE FROM ${table} WHERE id=$1`, [id]);
+      await bot.editMessageText(`🗑 Coupon #${id} supprimé (${canal})`, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
+    }
+
+    // --- ACTION : TESTER (envoi seulement à l'admin) ---
+    if (action === "test") {
+      if (coupon.media_type === "photo") {
+        await bot.sendPhoto(chatId, coupon.media_url, {
+          caption: coupon.content,
+          parse_mode: "HTML",
+        });
+      } else if (coupon.media_type === "video") {
+        await bot.sendVideo(chatId, coupon.media_url, {
+          caption: coupon.content,
+          parse_mode: "HTML",
+        });
+      } else {
+        await bot.sendMessage(chatId, coupon.content, { parse_mode: "HTML" });
+      }
+      return bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
+    }
+
+    // --- ACTION : PUBLIER ---
+    if (action === "publish") {
+      const targetChatId =
+        canal === "CANAL1"
+          ? process.env.CANAL1_ID
+          : process.env.CANAL2_ID;
+
+      if (coupon.media_type === "photo") {
+        await bot.sendPhoto(targetChatId, coupon.media_url, {
+          caption: coupon.content,
+          parse_mode: "HTML",
+        });
+      } else if (coupon.media_type === "video") {
+        await bot.sendVideo(targetChatId, coupon.media_url, {
+          caption: coupon.content,
+          parse_mode: "HTML",
+        });
+      } else {
+        await bot.sendMessage(targetChatId, coupon.content, {
+          parse_mode: "HTML",
+        });
+      }
+
+      await bot.answerCallbackQuery(query.id, { text: "🚀 Coupon publié !" });
+      return;
+    }
+
+    // --- ACTION : MODIFIER ---
+    if (action === "edit") {
+      pendingCoupons[chatId] = {
+        step: "await_date",
+        editing: true,
+        table,
+        id,
+      };
+
+      return bot.sendMessage(
+        chatId,
+        `✏️ Modification du coupon #${id} (${canal})\n📅 Indique la nouvelle date (YYYY-MM-DD) :`
+      );
+    }
+  } catch (err) {
+    console.error("❌ Erreur gestion bouton :", err);
+    bot.sendMessage(chatId, "❌ Une erreur est survenue.");
+  }
+});
+
