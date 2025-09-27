@@ -11,6 +11,7 @@ const { ping } = require("./pingServer")
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
+const { sendCoupons } = require("./couponScheduler");
 const { pool, insertManualCoupon } = require("./db");
 
 const ADMIN_ID = process.env.ADMIN_ID;
@@ -2020,30 +2021,34 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
 
 
 //--- COMMANDE /ajouter_coupon ---
-
 bot.onText(/\/ajouter_coupon/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
 
-  // Optionnel : limiter aux admins
   if (userId != process.env.ADMIN_ID) return;
 
-  pendingCoupons[chatId] = { step: "await_time" };
-
-  return bot.sendMessage(chatId, "🕒 Indique l'heure du coupon (HH:MM) :", {
-    reply_markup: { remove_keyboard: true },
-  });
+  pendingCoupons[chatId] = { step: "await_date" };
+  return bot.sendMessage(chatId, "📅 Indique la date du coupon (YYYY-MM-DD) :");
 });
 
-// --- Gestion des messages ---
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const pending = pendingCoupons[chatId];
-  if (!pending) return; // pas de procédure en cours
+  if (!pending) return;
 
   const text = msg.text?.trim();
 
-  // --- Étape 1 : heure ---
+  // --- Étape 1 : date ---
+  if (pending.step === "await_date") {
+    if (!text.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return bot.sendMessage(chatId, "⚠️ Format invalide. Réessaie (YYYY-MM-DD).");
+    }
+    pending.schedule_date = text;
+    pending.step = "await_time";
+    return bot.sendMessage(chatId, "🕒 Indique l'heure du coupon (HH:MM) :");
+  }
+
+  // --- Étape 2 : heure ---
   if (pending.step === "await_time") {
     if (!text.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
       return bot.sendMessage(chatId, "⚠️ Format invalide. Réessaie (HH:MM).");
@@ -2055,14 +2060,14 @@ bot.on("message", async (msg) => {
     });
   }
 
-  // --- Étape 2 : texte ---
+  // --- Étape 3 : texte ---
   if (pending.step === "await_text") {
     pending.content = text;
     pending.step = "await_media";
-    return bot.sendMessage(chatId, "📸 Envoie maintenant la photo ou la vidéo du coupon (ou tape 'aucun' si pas de média).");
+    return bot.sendMessage(chatId, "📸 Envoie maintenant la photo ou la vidéo du coupon (ou tape 'aucun') :");
   }
 
-  // --- Étape 3 : média ---
+  // --- Étape 4 : média ---
   if (pending.step === "await_media") {
     if (msg.photo) {
       pending.media_type = "photo";
@@ -2078,7 +2083,6 @@ bot.on("message", async (msg) => {
     }
 
     pending.step = "await_channel";
-
     return bot.sendMessage(chatId, "🌐 Choisis le canal pour ce coupon :", {
       reply_markup: {
         keyboard: [["CANAL1", "CANAL2"]],
@@ -2088,7 +2092,7 @@ bot.on("message", async (msg) => {
     });
   }
 
-  // --- Étape 4 : canal ---
+  // --- Étape 5 : canal ---
   if (pending.step === "await_channel") {
     let tableName;
     if (text === "CANAL1") tableName = "scheduled_coupons";
@@ -2097,13 +2101,14 @@ bot.on("message", async (msg) => {
 
     pending.table = tableName;
 
-    // --- Récapitulatif ---
+    // --- Récapitulatif HTML ---
     let recap = `<b>📌 Récapitulatif du coupon :</b>\n`;
+    recap += `<b>Date :</b> ${pending.schedule_date}\n`;
     recap += `<b>Heure :</b> ${pending.schedule_time}\n`;
     recap += `<b>Texte :</b> ${pending.content}\n`;
     recap += `<b>Média :</b> ${pending.media_type || "Aucun"}\n`;
     recap += `<b>Canal :</b> ${text}\n\n`;
-    recap += "✅ Confirme pour enregistrer ou ❌ annule.";
+    recap += "✅ Confirme pour enregistrer ou ❌ Annule.";
 
     pending.step = "await_confirm";
 
@@ -2121,7 +2126,7 @@ bot.on("message", async (msg) => {
   }
 });
 
-// --- Gestion des confirmations ---
+// --- Étape 6 : confirmation ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
@@ -2131,8 +2136,8 @@ bot.on("callback_query", async (query) => {
   if (data === "confirm_coupon") {
     try {
       await pool.query(
-        `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_time) VALUES ($1,$2,$3,$4)`,
-        [pending.content, pending.media_type, pending.media_url, pending.schedule_time]
+        `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_date, schedule_time) VALUES ($1,$2,$3,$4,$5)`,
+        [pending.content, pending.media_type, pending.media_url, pending.schedule_date, pending.schedule_time]
       );
 
       await bot.editMessageText(query.message.text + "\n\n✅ Coupon enregistré !", {
@@ -2158,3 +2163,4 @@ bot.on("callback_query", async (query) => {
     delete pendingCoupons[chatId];
   }
 });
+
