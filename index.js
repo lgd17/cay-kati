@@ -27,6 +27,7 @@ const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
 // ====== GESTION DES ÉTATS ======
 const pendingCoupon = {};
+const pendingCoupons = {};
 const pendingCustomRejects = {};
 const userStates = {}; 
 const fixedDeletionConfirmations = new Map();
