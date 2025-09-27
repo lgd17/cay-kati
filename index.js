@@ -1866,6 +1866,8 @@ bot.on("message", async (msg) => {
 
 
 
+// ====================== LISTES DES MESSAGES-FIXE ======================
+
 
 // === /addfixedmsg2 pour le Canal2 ===
 const addStates2 = {}; // suivi des étapes pour chaque admin
@@ -2013,3 +2015,145 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
 });
 
 
+// ====================== LISTES DES COUPONS-FIXE ======================
+
+
+//--- COMMANDE /ajouter_coupon ---
+
+bot.onText(/\/ajouter_coupon/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  // Optionnel : limiter aux admins
+  if (userId != process.env.ADMIN_ID) return;
+
+  pendingCoupons[chatId] = { step: "await_time" };
+
+  return bot.sendMessage(chatId, "🕒 Indique l'heure du coupon (HH:MM) :", {
+    reply_markup: { remove_keyboard: true },
+  });
+});
+
+// --- Gestion des messages ---
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const pending = pendingCoupons[chatId];
+  if (!pending) return; // pas de procédure en cours
+
+  const text = msg.text?.trim();
+
+  // --- Étape 1 : heure ---
+  if (pending.step === "await_time") {
+    if (!text.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
+      return bot.sendMessage(chatId, "⚠️ Format invalide. Réessaie (HH:MM).");
+    }
+    pending.schedule_time = text;
+    pending.step = "await_text";
+    return bot.sendMessage(chatId, "✏️ Envoie maintenant le texte du coupon :", {
+      parse_mode: "HTML",
+    });
+  }
+
+  // --- Étape 2 : texte ---
+  if (pending.step === "await_text") {
+    pending.content = text;
+    pending.step = "await_media";
+    return bot.sendMessage(chatId, "📸 Envoie maintenant la photo ou la vidéo du coupon (ou tape 'aucun' si pas de média).");
+  }
+
+  // --- Étape 3 : média ---
+  if (pending.step === "await_media") {
+    if (msg.photo) {
+      pending.media_type = "photo";
+      pending.media_url = msg.photo[msg.photo.length - 1].file_id;
+    } else if (msg.video) {
+      pending.media_type = "video";
+      pending.media_url = msg.video.file_id;
+    } else if (text.toLowerCase() === "aucun") {
+      pending.media_type = null;
+      pending.media_url = null;
+    } else {
+      return bot.sendMessage(chatId, "⚠️ Envoie une photo, une vidéo ou tape 'aucun'.");
+    }
+
+    pending.step = "await_channel";
+
+    return bot.sendMessage(chatId, "🌐 Choisis le canal pour ce coupon :", {
+      reply_markup: {
+        keyboard: [["CANAL1", "CANAL2"]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    });
+  }
+
+  // --- Étape 4 : canal ---
+  if (pending.step === "await_channel") {
+    let tableName;
+    if (text === "CANAL1") tableName = "scheduled_coupons";
+    else if (text === "CANAL2") tableName = "scheduled_coupons_2";
+    else return bot.sendMessage(chatId, "⚠️ Choix invalide. Tape CANAL1 ou CANAL2.");
+
+    pending.table = tableName;
+
+    // --- Récapitulatif ---
+    let recap = `<b>📌 Récapitulatif du coupon :</b>\n`;
+    recap += `<b>Heure :</b> ${pending.schedule_time}\n`;
+    recap += `<b>Texte :</b> ${pending.content}\n`;
+    recap += `<b>Média :</b> ${pending.media_type || "Aucun"}\n`;
+    recap += `<b>Canal :</b> ${text}\n\n`;
+    recap += "✅ Confirme pour enregistrer ou ❌ annule.";
+
+    pending.step = "await_confirm";
+
+    return bot.sendMessage(chatId, recap, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirmer", callback_data: "confirm_coupon" },
+            { text: "❌ Annuler", callback_data: "cancel_coupon" },
+          ],
+        ],
+      },
+    });
+  }
+});
+
+// --- Gestion des confirmations ---
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const pending = pendingCoupons[chatId];
+  if (!pending) return;
+
+  if (data === "confirm_coupon") {
+    try {
+      await pool.query(
+        `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_time) VALUES ($1,$2,$3,$4)`,
+        [pending.content, pending.media_type, pending.media_url, pending.schedule_time]
+      );
+
+      await bot.editMessageText(query.message.text + "\n\n✅ Coupon enregistré !", {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: "HTML",
+      });
+
+    } catch (err) {
+      console.error("❌ Erreur enregistrement coupon :", err);
+      await bot.sendMessage(chatId, "❌ Une erreur est survenue lors de l'enregistrement.");
+    }
+
+    delete pendingCoupons[chatId];
+  }
+
+  if (data === "cancel_coupon") {
+    await bot.editMessageText(query.message.text + "\n\n❌ Coupon annulé.", {
+      chat_id: chatId,
+      message_id: query.message.message_id,
+      parse_mode: "HTML",
+    });
+    delete pendingCoupons[chatId];
+  }
+});
