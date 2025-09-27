@@ -2019,7 +2019,6 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
 
 // ====================== LISTES DES COUPONS-FIXE ======================
 
-
 //--- COMMANDE /ajouter_coupon ---
 bot.onText(/\/ajouter_coupon/, async (msg) => {
   const chatId = msg.chat.id;
@@ -2075,7 +2074,7 @@ bot.on("message", async (msg) => {
     } else if (msg.video) {
       pending.media_type = "video";
       pending.media_url = msg.video.file_id;
-    } else if (text.toLowerCase() === "aucun") {
+    } else if (text && text.toLowerCase() === "aucun") {
       pending.media_type = null;
       pending.media_url = null;
     } else {
@@ -2140,12 +2139,7 @@ bot.on("callback_query", async (query) => {
         [pending.content, pending.media_type, pending.media_url, pending.schedule_date, pending.schedule_time]
       );
 
-      await bot.editMessageText(query.message.text + "\n\n✅ Coupon enregistré !", {
-        chat_id: chatId,
-        message_id: query.message.message_id,
-        parse_mode: "HTML",
-      });
-
+      await bot.sendMessage(chatId, "✅ Coupon enregistré avec succès !");
     } catch (err) {
       console.error("❌ Erreur enregistrement coupon :", err);
       await bot.sendMessage(chatId, "❌ Une erreur est survenue lors de l'enregistrement.");
@@ -2155,12 +2149,7 @@ bot.on("callback_query", async (query) => {
   }
 
   if (data === "cancel_coupon") {
-    await bot.editMessageText(query.message.text + "\n\n❌ Coupon annulé.", {
-      chat_id: chatId,
-      message_id: query.message.message_id,
-      parse_mode: "HTML",
-    });
+    await bot.sendMessage(chatId, "❌ Coupon annulé.");
     delete pendingCoupons[chatId];
   }
 });
-
