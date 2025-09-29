@@ -2187,6 +2187,9 @@ bot.on("callback_query", async (query) => {
 // ====================== LISTES DES COUPONS-FIXE ======================
 
 // --- COMMANDE /mes_coupons ---
+// ======================
+// COMMANDE /mes_coupons
+// ======================
 bot.onText(/\/mes_coupons/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -2202,18 +2205,18 @@ bot.onText(/\/mes_coupons/, async (msg) => {
       "SELECT * FROM scheduled_coupons_2 ORDER BY id DESC LIMIT 5"
     );
 
-    // Fonction helper pour formater les messages
+    // Helper pour envoyer les coupons avec boutons
     const sendCoupons = async (coupons, canal) => {
       if (coupons.length === 0) {
         return bot.sendMessage(chatId, `❌ Aucun coupon trouvé dans ${canal}.`);
       }
 
       for (let c of coupons) {
-        let text = `<b>📌 Coupon #${c.id} (${canal})</b>\n`;
-        text += `<b>Date :</b> ${c.schedule_date}\n`;
-        text += `<b>Heure :</b> ${c.schedule_time}\n`;
-        text += `<b>Texte :</b> ${c.content}\n`;
-        text += `<b>Média :</b> ${c.media_type || "Aucun"}\n`;
+        const text = `<b>📌 Coupon #${c.id} (${canal})</b>\n` +
+                     `<b>Date :</b> ${c.schedule_date}\n` +
+                     `<b>Heure :</b> ${c.schedule_time}\n` +
+                     `<b>Texte :</b> ${c.content}\n` +
+                     `<b>Média :</b> ${c.media_type || "Aucun"}`;
 
         await bot.sendMessage(chatId, text, {
           parse_mode: "HTML",
@@ -2242,6 +2245,9 @@ bot.onText(/\/mes_coupons/, async (msg) => {
   }
 });
 
+// ======================
+// CALLBACK QUERY GESTION DES COUPONS
+// ======================
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
@@ -2250,8 +2256,6 @@ bot.on("callback_query", async (query) => {
   if (userId != process.env.ADMIN_ID) return;
 
   const [action, canal, id] = data.split("_");
-
-  console.log("➡️ Callback reçu:", { action, canal, id });
 
   // Sélection table + canal
   let table, targetChatId;
@@ -2266,8 +2270,6 @@ bot.on("callback_query", async (query) => {
     return bot.answerCallbackQuery(query.id, { text: "❌ Canal inconnu." });
   }
 
-  console.log("➡️ Table sélectionnée:", table, "➡️ targetChatId:", targetChatId);
-
   try {
     // Récupération du coupon
     const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
@@ -2276,7 +2278,6 @@ bot.on("callback_query", async (query) => {
       return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
     }
     const coupon = res.rows[0];
-    console.log("✅ Coupon trouvé:", coupon);
 
     // --- SUPPRIMER ---
     if (action === "delete") {
@@ -2288,7 +2289,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- TESTER (envoi seulement à l’admin) ---
+    // --- TESTER ---
     if (action === "test") {
       try {
         if (coupon.media_type === "photo") {
@@ -2357,8 +2358,10 @@ bot.on("callback_query", async (query) => {
         `✏️ Modification du coupon #${id} (${canal})\n📅 Indique la nouvelle date (YYYY-MM-DD) :`
       );
     }
+
   } catch (err) {
     console.error("❌ Erreur gestion bouton :", err);
     bot.sendMessage(chatId, "❌ Une erreur est survenue.");
   }
 });
+
