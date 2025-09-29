@@ -2261,7 +2261,7 @@ bot.on("callback_query", async (query) => {
   let table, targetChatId;
   if (canal === "CANAL1") {
     table = "scheduled_coupons";
-    targetChatId = process.env.CANAL1_ID;
+    targetChatId = process.env.CANAL_ID;
   } else if (canal === "CANAL2") {
     table = "scheduled_coupons_2";
     targetChatId = process.env.CANAL2_ID;
