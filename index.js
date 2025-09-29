@@ -2353,15 +2353,4 @@ bot.on("callback_query", async (query) => {
         id,
       };
 
-      return bot.sendMessage(
-        chatId,
-        `✏️ Modification du coupon #${id} (${canal})\n📅 Indique la nouvelle date (YYYY-MM-DD) :`
-      );
-    }
-
-  } catch (err) {
-    console.error("❌ Erreur gestion bouton :", err);
-    bot.sendMessage(chatId, "❌ Une erreur est survenue.");
-  }
-});
-
+    
