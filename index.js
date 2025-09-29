@@ -2291,11 +2291,17 @@ bot.on("callback_query", async (query) => {
 
     // --- ACTION : PUBLIER ---
     if (action === "publish") {
+      // Choisir le bon canal automatiquement
       const targetChatId =
         canal === "CANAL1"
           ? process.env.CANAL1_ID
           : process.env.CANAL2_ID;
 
+      if (!targetChatId) {
+        return bot.answerCallbackQuery(query.id, { text: "❌ Chat ID du canal non défini !" });
+      }
+
+      // Envoi selon le type de média
       if (coupon.media_type === "photo") {
         await bot.sendPhoto(targetChatId, coupon.media_url, {
           caption: coupon.content,
@@ -2335,4 +2341,3 @@ bot.on("callback_query", async (query) => {
     bot.sendMessage(chatId, "❌ Une erreur est survenue.");
   }
 });
-
