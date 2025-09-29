@@ -2251,17 +2251,26 @@ bot.on("callback_query", async (query) => {
   if (userId != process.env.ADMIN_ID) return;
 
   const [action, canal, id] = data.split("_");
-  const table = canal === "CANAL1" ? "scheduled_coupons" : "scheduled_coupons_2";
+
+  // Sélectionne la bonne table et le bon canal en fonction du bouton
+  let table, targetChatId;
+  if (canal === "CANAL1") {
+    table = "scheduled_coupons";
+    targetChatId = process.env.CANAL1_ID;
+  } else if (canal === "CANAL2") {
+    table = "scheduled_coupons_2";
+    targetChatId = process.env.CANAL2_ID;
+  }
 
   try {
-    // Récupère le coupon ciblé
+    // Récupère le coupon dans la bonne table
     const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
     if (res.rows.length === 0) {
       return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
     }
     const coupon = res.rows[0];
 
-    // --- ACTION : SUPPRIMER ---
+    // --- SUPPRIMER ---
     if (action === "delete") {
       await pool.query(`DELETE FROM ${table} WHERE id=$1`, [id]);
       await bot.editMessageText(`🗑 Coupon #${id} supprimé (${canal})`, {
@@ -2271,7 +2280,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- ACTION : TESTER (envoi seulement à l'admin) ---
+    // --- TESTER (envoi uniquement à l’admin) ---
     if (action === "test") {
       if (coupon.media_type === "photo") {
         await bot.sendPhoto(chatId, coupon.media_url, {
@@ -2289,19 +2298,8 @@ bot.on("callback_query", async (query) => {
       return bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
     }
 
-    // --- ACTION : PUBLIER ---
+    // --- PUBLIER (envoie au bon canal automatiquement) ---
     if (action === "publish") {
-      // Choisir le bon canal automatiquement
-      const targetChatId =
-        canal === "CANAL1"
-          ? process.env.CANAL1_ID
-          : process.env.CANAL2_ID;
-
-      if (!targetChatId) {
-        return bot.answerCallbackQuery(query.id, { text: "❌ Chat ID du canal non défini !" });
-      }
-
-      // Envoi selon le type de média
       if (coupon.media_type === "photo") {
         await bot.sendPhoto(targetChatId, coupon.media_url, {
           caption: coupon.content,
@@ -2322,7 +2320,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- ACTION : MODIFIER ---
+    // --- MODIFIER ---
     if (action === "edit") {
       pendingCoupons[chatId] = {
         step: "await_date",
@@ -2341,3 +2339,4 @@ bot.on("callback_query", async (query) => {
     bot.sendMessage(chatId, "❌ Une erreur est survenue.");
   }
 });
+
