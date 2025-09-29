@@ -2248,6 +2248,7 @@ bot.onText(/\/mes_coupons/, async (msg) => {
 // ======================
 // CALLBACK QUERY GESTION DES COUPONS
 // ======================
+// CALLBACK QUERY GESTION DES COUPONS
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
@@ -2255,9 +2256,10 @@ bot.on("callback_query", async (query) => {
 
   if (userId != process.env.ADMIN_ID) return;
 
+  // --- EDIT / PUBLISH / DELETE / TEST ---
   const [action, canal, id] = data.split("_");
 
-  // Sélection table + canal
+  // Déterminer table et canal cible
   let table, targetChatId;
   if (canal === "CANAL1") {
     table = "scheduled_coupons";
@@ -2266,15 +2268,13 @@ bot.on("callback_query", async (query) => {
     table = "scheduled_coupons_2";
     targetChatId = process.env.CANAL2_ID;
   } else {
-    console.error("❌ Canal inconnu:", canal);
     return bot.answerCallbackQuery(query.id, { text: "❌ Canal inconnu." });
   }
 
   try {
-    // Récupération du coupon
+    // Récupérer le coupon
     const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
     if (res.rows.length === 0) {
-      console.warn("❌ Aucun coupon trouvé dans", table, "pour id:", id);
       return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
     }
     const coupon = res.rows[0];
@@ -2289,59 +2289,38 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- TESTER ---
+    // --- TEST ---
     if (action === "test") {
       try {
         if (coupon.media_type === "photo") {
-          await bot.sendPhoto(chatId, coupon.media_url, {
-            caption: coupon.content,
-            parse_mode: "HTML",
-          });
+          await bot.sendPhoto(chatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
         } else if (coupon.media_type === "video") {
-          await bot.sendVideo(chatId, coupon.media_url, {
-            caption: coupon.content,
-            parse_mode: "HTML",
-          });
+          await bot.sendVideo(chatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
         } else {
           await bot.sendMessage(chatId, coupon.content, { parse_mode: "HTML" });
         }
-        await bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
-      } catch (err) {
-        console.error("⚠️ Erreur test HTML, fallback brut:", err.message);
-        await bot.sendMessage(chatId, coupon.content);
+        return bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
+      } catch {
+        return bot.sendMessage(chatId, coupon.content);
       }
-      return;
     }
 
     // --- PUBLIER ---
     if (action === "publish") {
-      if (!targetChatId) {
-        console.error("❌ targetChatId vide pour", canal);
-        return bot.answerCallbackQuery(query.id, { text: "❌ Canal non configuré." });
-      }
+      if (!targetChatId) return bot.answerCallbackQuery(query.id, { text: "❌ Canal non configuré." });
 
       try {
         if (coupon.media_type === "photo") {
-          await bot.sendPhoto(targetChatId, coupon.media_url, {
-            caption: coupon.content,
-            parse_mode: "HTML",
-          });
+          await bot.sendPhoto(targetChatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
         } else if (coupon.media_type === "video") {
-          await bot.sendVideo(targetChatId, coupon.media_url, {
-            caption: coupon.content,
-            parse_mode: "HTML",
-          });
+          await bot.sendVideo(targetChatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
         } else {
-          await bot.sendMessage(targetChatId, coupon.content, {
-            parse_mode: "HTML",
-          });
+          await bot.sendMessage(targetChatId, coupon.content, { parse_mode: "HTML" });
         }
-        await bot.answerCallbackQuery(query.id, { text: "🚀 Coupon publié !" });
-      } catch (err) {
-        console.error("⚠️ Erreur publication HTML, fallback brut:", err.message);
-        await bot.sendMessage(targetChatId, coupon.content);
+        return bot.answerCallbackQuery(query.id, { text: "🚀 Coupon publié !" });
+      } catch {
+        return bot.sendMessage(targetChatId, coupon.content);
       }
-      return;
     }
 
     // --- MODIFIER ---
@@ -2351,6 +2330,19 @@ bot.on("callback_query", async (query) => {
         editing: true,
         table,
         id,
+        content: coupon.content,
+        media_type: coupon.media_type,
+        media_url: coupon.media_url,
+        schedule_date: coupon.schedule_date,
+        schedule_time: coupon.schedule_time,
       };
+      return bot.sendMessage(chatId, "✏️ Modification du coupon : commence par indiquer la nouvelle date (YYYY-MM-DD) ou garde l’existante.");
+    }
+
+  } catch (err) {
+    console.error("❌ Erreur gestion bouton :", err);
+    return bot.sendMessage(chatId, "❌ Une erreur est survenue.");
+  }
+});
 
     
