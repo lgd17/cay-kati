@@ -2019,7 +2019,7 @@ bot.onText(/^\/testfixes(?:\s+(\d+))?/, async (msg, match) => {
 
 // ====================== LISTES DES COUPONS-FIXE ======================
 
-//--- COMMANDE /ajouter_coupon ---
+// --- COMMANDE /ajouter_coupon ---
 bot.onText(/\/ajouter_coupon/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -2039,7 +2039,7 @@ bot.on("message", async (msg) => {
 
   // --- Étape 1 : date ---
   if (pending.step === "await_date") {
-    if (!text.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    if (!text || !text.match(/^\d{4}-\d{2}-\d{2}$/)) {
       return bot.sendMessage(chatId, "⚠️ Format invalide. Réessaie (YYYY-MM-DD).");
     }
     pending.schedule_date = text;
@@ -2049,18 +2049,19 @@ bot.on("message", async (msg) => {
 
   // --- Étape 2 : heure ---
   if (pending.step === "await_time") {
-    if (!text.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
+    if (!text || !text.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
       return bot.sendMessage(chatId, "⚠️ Format invalide. Réessaie (HH:MM).");
     }
     pending.schedule_time = text;
     pending.step = "await_text";
-    return bot.sendMessage(chatId, "✏️ Envoie maintenant le texte du coupon :", {
-      parse_mode: "HTML",
-    });
+    return bot.sendMessage(chatId, "✏️ Envoie maintenant le texte du coupon :", { parse_mode: "HTML" });
   }
 
   // --- Étape 3 : texte ---
   if (pending.step === "await_text") {
+    if (!text) {
+      return bot.sendMessage(chatId, "⚠️ Envoie du texte obligatoire.");
+    }
     pending.content = text;
     pending.step = "await_media";
     return bot.sendMessage(chatId, "📸 Envoie maintenant la photo ou la vidéo du coupon (ou tape 'aucun') :");
@@ -2093,6 +2094,10 @@ bot.on("message", async (msg) => {
 
   // --- Étape 5 : canal ---
   if (pending.step === "await_channel") {
+    if (!text) {
+      return bot.sendMessage(chatId, "⚠️ Choix invalide. Tape CANAL1 ou CANAL2.");
+    }
+
     let tableName;
     if (text === "CANAL1") tableName = "scheduled_coupons";
     else if (text === "CANAL2") tableName = "scheduled_coupons_2";
@@ -2130,12 +2135,13 @@ bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
   const pending = pendingCoupons[chatId];
-  if (!pending) return;
+
+  if (!pending) return; // éviter les conflits avec edit/delete/publish/test
 
   if (data === "confirm_coupon") {
     try {
       if (pending.editing) {
-        // Mode édition → UPDATE
+        // --- UPDATE ---
         await pool.query(
           `UPDATE ${pending.table}
            SET content=$1, media_type=$2, media_url=$3, schedule_date=$4, schedule_time=$5
@@ -2149,10 +2155,9 @@ bot.on("callback_query", async (query) => {
             pending.id,
           ]
         );
-
         await bot.sendMessage(chatId, `✏️ Coupon #${pending.id} mis à jour avec succès !`);
       } else {
-        // Mode ajout → INSERT
+        // --- INSERT ---
         await pool.query(
           `INSERT INTO ${pending.table} (content, media_type, media_url, schedule_date, schedule_time)
            VALUES ($1,$2,$3,$4,$5)`,
@@ -2164,14 +2169,12 @@ bot.on("callback_query", async (query) => {
             pending.schedule_time,
           ]
         );
-
         await bot.sendMessage(chatId, "✅ Nouveau coupon enregistré avec succès !");
       }
     } catch (err) {
       console.error("❌ Erreur enregistrement coupon :", err);
       await bot.sendMessage(chatId, "❌ Une erreur est survenue lors de l'enregistrement.");
     }
-
     delete pendingCoupons[chatId];
   }
 
@@ -2180,9 +2183,6 @@ bot.on("callback_query", async (query) => {
     delete pendingCoupons[chatId];
   }
 });
-
-
-
 
 // ====================== LISTES DES COUPONS-FIXE ======================
 
