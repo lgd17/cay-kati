@@ -24,7 +24,9 @@ const channelId = process.env.TELEGRAM_CHANNEL_ID;
 const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
 
-
+// Importer les commandes
+require("./ajouter_coupon")(bot, pool);
+require("./mes_coupons")(bot, pool);
 
 // ====== GESTION DES ÉTATS ======
 const pendingCoupon = {};
