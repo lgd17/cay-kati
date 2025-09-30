@@ -1,6 +1,5 @@
-// mes_coupons.js
 module.exports = (bot, pool) => {
-  const editingCoupons = {}; // état temporaire des éditions
+  const editSessions = {}; // sessions temporaires pour la modification
 
   // ======================
   // COMMANDE /mes_coupons
@@ -9,76 +8,65 @@ module.exports = (bot, pool) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    if (userId != process.env.ADMIN_ID)
-      return bot.sendMessage(chatId, "🚫 Commande réservée à l’admin.");
+    if (userId != process.env.ADMIN_ID) return;
 
     try {
-      const res1 = await pool.query("SELECT * FROM scheduled_coupons ORDER BY id DESC LIMIT 5");
-      const res2 = await pool.query("SELECT * FROM scheduled_coupons_2 ORDER BY id DESC LIMIT 5");
+      // Récupère 5 derniers coupons de chaque table
+      const res1 = await pool.query(
+        "SELECT * FROM scheduled_coupons ORDER BY id DESC LIMIT 5"
+      );
+      const res2 = await pool.query(
+        "SELECT * FROM scheduled_coupons_2 ORDER BY id DESC LIMIT 5"
+      );
 
-      if (res1.rows.length === 0 && res2.rows.length === 0) {
-        return bot.sendMessage(chatId, "📭 Aucun coupon enregistré.");
-      }
+      // Helper pour envoyer les coupons avec boutons
+      const sendCoupons = async (coupons, canal) => {
+        if (coupons.length === 0) {
+          return bot.sendMessage(
+            chatId,
+            `❌ Aucun coupon trouvé dans ${canal}.`
+          );
+        }
 
-      const sendCouponList = async (rows, canalName, canalCode) => {
-        for (const row of rows) {
-          let caption = `🎟 <b>Coupon #${row.id}</b>\n\n`;
-          caption += `🗓 Date: ${row.schedule_date}\n`;
-          caption += `⏰ Heure: ${row.schedule_time}\n`;
-          caption += `📝 Texte: ${row.content || "(vide)"}\n`;
-          caption += `📎 Média: ${row.media_type || "aucun"}\n`;
-          caption += `📡 Canal: ${canalName}`;
+        for (let c of coupons) {
+          const text =
+            `<b>📌 Coupon #${c.id} (${canal})</b>\n` +
+            `<b>Date :</b> ${c.schedule_date}\n` +
+            `<b>Heure :</b> ${c.schedule_time}\n` +
+            `<b>Texte :</b> ${c.content}\n` +
+            `<b>Média :</b> ${c.media_type || "Aucun"}`;
 
-          const keyboard = {
-            inline_keyboard: [
-              [
-                { text: "✅ Publier", callback_data: `publish_${canalCode}_${row.id}` },
-                { text: "❌ Supprimer", callback_data: `delete_${canalCode}_${row.id}` },
+          await bot.sendMessage(chatId, text, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "✏️ Modifier", callback_data: `edit_${canal}_${c.id}` },
+                  { text: "🚀 Publier", callback_data: `publish_${canal}_${c.id}` },
+                ],
+                [
+                  { text: "🗑 Supprimer", callback_data: `delete_${canal}_${c.id}` },
+                  { text: "🧪 Tester", callback_data: `test_${canal}_${c.id}` },
+                ],
               ],
-              [
-                { text: "👁️ Test", callback_data: `test_${canalCode}_${row.id}` },
-                { text: "✏ Modifier", callback_data: `edit_${canalCode}_${row.id}` },
-              ],
-            ],
-          };
-
-          if (row.media_type === "photo") {
-            await bot.sendPhoto(chatId, row.media_url, {
-              caption,
-              parse_mode: "HTML",
-              reply_markup: keyboard,
-            });
-          } else if (row.media_type === "video") {
-            await bot.sendVideo(chatId, row.media_url, {
-              caption,
-              parse_mode: "HTML",
-              reply_markup: keyboard,
-            });
-          } else if (row.media_type === "document") {
-            await bot.sendDocument(chatId, row.media_url, {
-              caption,
-              parse_mode: "HTML",
-              reply_markup: keyboard,
-            });
-          } else {
-            await bot.sendMessage(chatId, caption, {
-              parse_mode: "HTML",
-              reply_markup: keyboard,
-            });
-          }
+            },
+          });
         }
       };
 
-      await sendCouponList(res1.rows, "Canal 1", "CANAL1");
-      await sendCouponList(res2.rows, "Canal 2", "CANAL2");
+      await sendCoupons(res1.rows, "CANAL1");
+      await sendCoupons(res2.rows, "CANAL2");
     } catch (err) {
-      console.error("❌ Erreur /mes_coupons :", err);
-      bot.sendMessage(chatId, "❌ Erreur lors de la récupération des coupons.");
+      console.error("❌ Erreur récupération coupons :", err);
+      bot.sendMessage(
+        chatId,
+        "❌ Erreur lors de la récupération des coupons."
+      );
     }
   });
 
   // ======================
-  // CALLBACK QUERY
+  // CALLBACK QUERY GESTION DES COUPONS
   // ======================
   bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
@@ -87,9 +75,10 @@ module.exports = (bot, pool) => {
 
     if (userId != process.env.ADMIN_ID) return;
 
+    // découpe l'action
     const [action, canal, id] = data.split("_");
 
-    // table et canal cible
+    // Déterminer table et canal cible
     let table, targetChatId;
     if (canal === "CANAL1") {
       table = "scheduled_coupons";
@@ -97,149 +86,218 @@ module.exports = (bot, pool) => {
     } else if (canal === "CANAL2") {
       table = "scheduled_coupons_2";
       targetChatId = process.env.CANAL2_ID;
-    } else {
-      return bot.answerCallbackQuery(query.id, { text: "❌ Canal inconnu." });
     }
 
-    // Récupérer coupon
-    const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
-    if (res.rows.length === 0) {
-      return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
-    }
-    const coupon = res.rows[0];
-
-    // --- SUPPRIMER ---
-    if (action === "delete") {
-      await pool.query(`DELETE FROM ${table} WHERE id=$1`, [id]);
-      await bot.editMessageText(`🗑 Coupon #${id} supprimé (${canal})`, {
-        chat_id: chatId,
-        message_id: query.message.message_id,
-      });
-      return;
-    }
-
-    // --- TEST ---
-    if (action === "test") {
-      try {
-        if (coupon.media_type === "photo") {
-          await bot.sendPhoto(chatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
-        } else if (coupon.media_type === "video") {
-          await bot.sendVideo(chatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
-        } else {
-          await bot.sendMessage(chatId, coupon.content, { parse_mode: "HTML" });
-        }
-        return bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
-      } catch {
-        return bot.sendMessage(chatId, coupon.content);
+    try {
+      // Récupérer le coupon
+      const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
+      if (res.rows.length === 0) {
+        return bot.answerCallbackQuery(query.id, {
+          text: "❌ Coupon introuvable.",
+        });
       }
-    }
+      const coupon = res.rows[0];
 
-    // --- PUBLIER ---
-    if (action === "publish") {
-      if (!targetChatId) return bot.answerCallbackQuery(query.id, { text: "❌ Canal non configuré." });
-
-      try {
-        if (coupon.media_type === "photo") {
-          await bot.sendPhoto(targetChatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
-        } else if (coupon.media_type === "video") {
-          await bot.sendVideo(targetChatId, coupon.media_url, { caption: coupon.content, parse_mode: "HTML" });
-        } else {
-          await bot.sendMessage(targetChatId, coupon.content, { parse_mode: "HTML" });
-        }
-        return bot.answerCallbackQuery(query.id, { text: "🚀 Coupon publié !" });
-      } catch {
-        return bot.sendMessage(targetChatId, coupon.content);
+      // --- SUPPRIMER ---
+      if (action === "delete") {
+        await pool.query(`DELETE FROM ${table} WHERE id=$1`, [id]);
+        await bot.editMessageText(`🗑 Coupon #${id} supprimé (${canal})`, {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
       }
-    }
 
-    // --- MODIFIER ---
-    if (action === "edit") {
-      editingCoupons[chatId] = {
-        step: "date",
-        table,
-        id,
-        old: coupon,
-        newData: { ...coupon }, // copie des données existantes
-      };
-      await bot.sendMessage(chatId, "✏️ Nouvelle date (YYYY-MM-DD) ou tape <b>skip</b> :", { parse_mode: "HTML" });
-      return bot.answerCallbackQuery(query.id);
-    }
+      // --- TEST ---
+      if (action === "test") {
+        try {
+          if (coupon.media_type === "photo") {
+            await bot.sendPhoto(chatId, coupon.media_url, {
+              caption: coupon.content,
+              parse_mode: "HTML",
+            });
+          } else if (coupon.media_type === "video") {
+            await bot.sendVideo(chatId, coupon.media_url, {
+              caption: coupon.content,
+              parse_mode: "HTML",
+            });
+          } else {
+            await bot.sendMessage(chatId, coupon.content, {
+              parse_mode: "HTML",
+            });
+          }
+          return bot.answerCallbackQuery(query.id, { text: "✅ Test envoyé." });
+        } catch {
+          return bot.sendMessage(chatId, coupon.content);
+        }
+      }
 
-    // --- ENREGISTRER ---
-    if (action === "save") {
-      const state = editingCoupons[chatId];
-      if (!state) return bot.answerCallbackQuery(query.id, { text: "❌ Aucun état en cours." });
+      // --- PUBLIER ---
+      if (action === "publish") {
+        if (!targetChatId)
+          return bot.answerCallbackQuery(query.id, {
+            text: "❌ Canal non configuré.",
+          });
 
-      await pool.query(
-        `UPDATE ${state.table} SET schedule_date=$1, schedule_time=$2, content=$3, media_type=$4, media_url=$5 WHERE id=$6`,
-        [
-          state.newData.schedule_date,
-          state.newData.schedule_time,
-          state.newData.content,
-          state.newData.media_type,
-          state.newData.media_url,
-          state.id,
-        ]
-      );
+        try {
+          if (coupon.media_type === "photo") {
+            await bot.sendPhoto(targetChatId, coupon.media_url, {
+              caption: coupon.content,
+              parse_mode: "HTML",
+            });
+          } else if (coupon.media_type === "video") {
+            await bot.sendVideo(targetChatId, coupon.media_url, {
+              caption: coupon.content,
+              parse_mode: "HTML",
+            });
+          } else {
+            await bot.sendMessage(targetChatId, coupon.content, {
+              parse_mode: "HTML",
+            });
+          }
+          return bot.answerCallbackQuery(query.id, {
+            text: "🚀 Coupon publié !",
+          });
+        } catch {
+          return bot.sendMessage(targetChatId, coupon.content);
+        }
+      }
 
-      await bot.editMessageText(`💾 Coupon #${state.id} mis à jour avec succès !`, {
-        chat_id: chatId,
-        message_id: query.message.message_id,
-      });
+      // --- MODIFIER ---
+      if (action === "edit") {
+        editSessions[chatId] = {
+          step: "await_date",
+          table,
+          id,
+          content: coupon.content,
+          media_type: coupon.media_type,
+          media_url: coupon.media_url,
+          schedule_date: coupon.schedule_date,
+          schedule_time: coupon.schedule_time,
+        };
 
-      delete editingCoupons[chatId];
-      return bot.answerCallbackQuery(query.id, { text: "✅ Enregistré !" });
+        return bot.sendMessage(
+          chatId,
+          "✏️ Nouvelle date (YYYY-MM-DD) ou tape skip :",
+          { parse_mode: "HTML" }
+        );
+      }
+
+      // --- SAUVEGARDE EDITION ---
+      if (action === "saveEdit") {
+        const session = editSessions[chatId];
+        if (!session) return;
+
+        await pool.query(
+          `UPDATE ${session.table} 
+           SET content=$1, media_type=$2, media_url=$3, schedule_date=$4, schedule_time=$5 
+           WHERE id=$6`,
+          [
+            session.content,
+            session.media_type,
+            session.media_url,
+            session.schedule_date,
+            session.schedule_time,
+            session.id,
+          ]
+        );
+
+        delete editSessions[chatId];
+        return bot.editMessageText(
+          `✅ Coupon #${session.id} modifié avec succès !`,
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+          }
+        );
+      }
+
+      // --- ANNULER EDITION ---
+      if (action === "cancelEdit") {
+        delete editSessions[chatId];
+        return bot.editMessageText("❌ Modification annulée.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+      }
+    } catch (err) {
+      console.error("❌ Erreur gestion bouton :", err);
+      return bot.sendMessage(chatId, "❌ Une erreur est survenue.");
     }
   });
 
   // ======================
-  // FLUX D’ÉDITION
+  // WORKFLOW MODIFICATION (messages)
   // ======================
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const userId = msg.from.id;
+    if (!editSessions[chatId]) return; // pas en mode édition
 
-    if (userId != process.env.ADMIN_ID) return;
-    if (!editingCoupons[chatId]) return;
+    const session = editSessions[chatId];
+    const text = msg.text.trim();
 
-    const state = editingCoupons[chatId];
-    const text = msg.text?.trim();
-
-    if (state.step === "date") {
-      if (text.toLowerCase() !== "skip") state.newData.schedule_date = text;
-      state.step = "time";
-      return bot.sendMessage(chatId, "⏰ Nouvelle heure (HH:mm) ou tape <b>skip</b> :", { parse_mode: "HTML" });
-    }
-
-    if (state.step === "time") {
-      if (text.toLowerCase() !== "skip") state.newData.schedule_time = text;
-      state.step = "content";
-      return bot.sendMessage(chatId, "📝 Nouveau texte ou tape <b>skip</b> :", { parse_mode: "HTML" });
-    }
-
-    if (state.step === "content") {
-      if (text.toLowerCase() !== "skip") state.newData.content = text;
-      state.step = "media";
-      return bot.sendMessage(chatId, "📎 Nouveau lien média (ou skip) :", { parse_mode: "HTML" });
-    }
-
-    if (state.step === "media") {
+    // --- Étape DATE ---
+    if (session.step === "await_date") {
       if (text.toLowerCase() !== "skip") {
-        state.newData.media_url = text;
-        state.newData.media_type = text.endsWith(".mp4") ? "video" : "photo"; // simple détection
+        session.schedule_date = text;
       }
-      state.step = "recap";
+      session.step = "await_time";
+      return bot.sendMessage(
+        chatId,
+        "⏰ Nouvelle heure (HH:mm) ou tape skip :"
+      );
+    }
 
-      const recap = `📋 <b>Récapitulatif modification</b>\n\n` +
-        `🗓 Date: ${state.newData.schedule_date}\n` +
-        `⏰ Heure: ${state.newData.schedule_time}\n` +
-        `📝 Texte: ${state.newData.content}\n` +
-        `📎 Média: ${state.newData.media_type || "aucun"}\n`;
+    // --- Étape HEURE ---
+    if (session.step === "await_time") {
+      if (text.toLowerCase() !== "skip") {
+        session.schedule_time = text;
+      }
+      session.step = "await_text";
+      return bot.sendMessage(chatId, "📝 Nouveau texte ou tape skip :");
+    }
+
+    // --- Étape TEXTE ---
+    if (session.step === "await_text") {
+      if (text.toLowerCase() !== "skip") {
+        session.content = text;
+      }
+      session.step = "await_media";
+      return bot.sendMessage(chatId, "📎 Nouveau média (URL) ou tape skip :");
+    }
+
+    // --- Étape MEDIA ---
+    if (session.step === "await_media") {
+      if (text.toLowerCase() !== "skip") {
+        session.media_url = text;
+        session.media_type = text.endsWith(".mp4") ? "video" : "photo";
+      }
+      session.step = "confirm";
+
+      const recap =
+        `<b>✅ Récapitulatif :</b>\n` +
+        `<b>Date :</b> ${session.schedule_date}\n` +
+        `<b>Heure :</b> ${session.schedule_time}\n` +
+        `<b>Texte :</b> ${session.content}\n` +
+        `<b>Média :</b> ${session.media_url || "Aucun"}`;
 
       return bot.sendMessage(chatId, recap, {
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [[{ text: "💾 Enregistrer", callback_data: "save" }]],
+          inline_keyboard: [
+            [
+              {
+                text: "💾 Enregistrer",
+                callback_data: `saveEdit_${session.table}_${session.id}`,
+              },
+            ],
+            [
+              {
+                text: "❌ Annuler",
+                callback_data: `cancelEdit_${session.table}_${session.id}`,
+              },
+            ],
+          ],
         },
       });
     }
