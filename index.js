@@ -370,6 +370,7 @@ bot.on("callback_query", async (query) => {
 
                     //=== COMMANDE /voir_pronos ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
+
 // --- Commande /voir_pronos ---
 bot.onText(/\/voir_pronos/, async (msg) => {
   const chatId = msg.chat.id;
@@ -430,12 +431,24 @@ bot.onText(/\/voir_pronos/, async (msg) => {
   }
 });
 
-// --- Callback général ---
+// --- Callback général (uniquement pour daily_pronos) ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const userId = query.from.id;
   const data = query.data;
   const msgId = query.message.message_id;
+
+  // ✅ Filtrer uniquement les callbacks liés à voir_pronos
+  if (
+    !data.startsWith("edit_") &&
+    !data.startsWith("delete_") &&
+    !data.startsWith("confirmdelete_") &&
+    !data.startsWith("test_") &&
+    !data.startsWith("postnow_") &&
+    data !== "cancel"
+  ) {
+    return; // Ignorer les autres callbacks (évite doublons avec mes_coupons.js, etc.)
+  }
 
   if (!ADMIN_IDS.includes(userId)) {
     return bot.answerCallbackQuery(query.id, { text: "⛔ Accès refusé." });
@@ -559,7 +572,11 @@ bot.on("message", async (msg) => {
     state.newContent = msg.text;
     state.step = "edit_media";
 
-    return bot.sendMessage(chatId, "📎 Envoie un nouveau média (*photo*, *vidéo*, *note vocale*, *audio*, *vidéo note*, *document*, *URL*) ou tape /skip pour garder l'ancien.", { parse_mode: "Markdown" });
+    return bot.sendMessage(
+      chatId,
+      "📎 Envoie un nouveau média (*photo*, *vidéo*, *note vocale*, *audio*, *vidéo note*, *document*, *URL*) ou tape /skip pour garder l'ancien.",
+      { parse_mode: "Markdown" }
+    );
   }
 
   // --- Étape média ---
