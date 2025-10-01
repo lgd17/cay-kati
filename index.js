@@ -26,7 +26,9 @@ const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
 // Importer les commandes
 require("./ajouter_coupon")(bot, pool);
-require("./mes_coupons")(bot, pool);
+const mesCoupons = require("./mes_coupons");
+mesCoupons(bot, pool, ADMIN_IDS);
+
 
 // ====== GESTION DES ÉTATS ======
 const pendingCoupon = {};
