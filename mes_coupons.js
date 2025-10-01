@@ -4,7 +4,7 @@
 
 const couponEditSessions = {};  // Pour /mes_coupons
 
-module.exports = (bot, pool) => {
+module.exports = (bot, pool, ADMIN_IDS) => {
   // --- COMMANDE /mes_coupons ---
   bot.onText(/\/mes_coupons/, async (msg) => {
     const chatId = msg.chat.id;
