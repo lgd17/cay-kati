@@ -370,7 +370,6 @@ bot.on("callback_query", async (query) => {
 
                     //=== COMMANDE /voir_pronos ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
-
 // --- Commande /voir_pronos ---
 bot.onText(/\/voir_pronos/, async (msg) => {
   const chatId = msg.chat.id;
@@ -431,24 +430,21 @@ bot.onText(/\/voir_pronos/, async (msg) => {
   }
 });
 
+// --- États d’édition spécifiques aux pronos ---
+const pronoEditStates = {};
+
 // --- Callback général (uniquement pour daily_pronos) ---
 bot.on("callback_query", async (query) => {
+  const data = query.data;
+
+  // ✅ Filtrer uniquement les callbacks liés à daily_pronos
+  if (!/^edit_|^delete_|^confirmdelete_|^test_|^postnow_|^cancel$/.test(data)) {
+    return; // Ignorer les autres callbacks
+  }
+
   const chatId = query.message.chat.id;
   const userId = query.from.id;
-  const data = query.data;
   const msgId = query.message.message_id;
-
-  // ✅ Filtrer uniquement les callbacks liés à voir_pronos
-  if (
-    !data.startsWith("edit_") &&
-    !data.startsWith("delete_") &&
-    !data.startsWith("confirmdelete_") &&
-    !data.startsWith("test_") &&
-    !data.startsWith("postnow_") &&
-    data !== "cancel"
-  ) {
-    return; // Ignorer les autres callbacks (évite doublons avec mes_coupons.js, etc.)
-  }
 
   if (!ADMIN_IDS.includes(userId)) {
     return bot.answerCallbackQuery(query.id, { text: "⛔ Accès refusé." });
@@ -490,7 +486,7 @@ bot.on("callback_query", async (query) => {
     // --- Editer ---
     if (data.startsWith("edit_")) {
       const id = data.split("_")[1];
-      editStates[chatId] = {
+      pronoEditStates[chatId] = {
         step: "edit_text",
         pronoId: id,
         newContent: null,
@@ -564,7 +560,7 @@ bot.on("callback_query", async (query) => {
 // --- Gestion messages pour édition ---
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
-  const state = editStates[chatId];
+  const state = pronoEditStates[chatId];
   if (!state) return;
 
   // --- Étape texte ---
@@ -607,20 +603,20 @@ bot.on("message", async (msg) => {
     await pool.query(queryText, [state.newContent, state.newMediaUrl, state.newMediaType, state.pronoId]);
 
     await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour avec succès.`);
-    delete editStates[chatId];
+    delete pronoEditStates[chatId];
   }
 });
 
 // --- Commande /skip pour édition média ---
 bot.onText(/\/skip/, async (msg) => {
   const chatId = msg.chat.id;
-  const state = editStates[chatId];
+  const state = pronoEditStates[chatId];
   if (!state || state.step !== "edit_media") return;
 
   await pool.query("UPDATE daily_pronos SET content = $1 WHERE id = $2", [state.newContent, state.pronoId]);
 
   await bot.sendMessage(chatId, `✅ Prono ID ${state.pronoId} mis à jour (média inchangé).`);
-  delete editStates[chatId];
+  delete pronoEditStates[chatId];
 });
 
 
