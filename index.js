@@ -493,7 +493,7 @@ bot.on("callback_query", async (query) => {
         newMediaUrl: null,
         newMediaType: null,
       };
-      return bot.sendMessage(chatId, `✍️ Envoie le nouveau texte pour le prono ID ${id}, ou tape /cancel pour annuler.`);
+      return bot.sendMessage(chatId, ` Envoie le nouveau texte pour le prono ID ${id}, ou tape /cancel pour annuler.`);
     }
 
     // --- Tester ---
