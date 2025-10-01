@@ -8,7 +8,7 @@ module.exports = (bot, pool) => {
   // --- COMMANDE /mes_coupons ---
   bot.onText(/\/mes_coupons/, async (msg) => {
     const chatId = msg.chat.id;
-    if (!ADMIN_ID.includes(msg.from.id)) return;
+    if (!ADMIN_IDS.includes(msg.from.id)) return;
 
     for (const canal of ["CANAL1", "CANAL2"]) {
       const table = canal === "CANAL1" ? "scheduled_coupons" : "scheduled_coupons2";
