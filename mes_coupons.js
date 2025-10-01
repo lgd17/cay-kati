@@ -66,7 +66,8 @@ module.exports = (bot, pool) => {
       !data.startsWith("publish_") &&
       !data.startsWith("test_") &&
       !data.startsWith("saveEdit_") &&
-      !data.startsWith("cancelEdit_")
+      !data.startsWith("cancelEdit_") &&
+      !data.startsWith("skip_")
     ) {
       return;
     }
@@ -75,7 +76,10 @@ module.exports = (bot, pool) => {
     const userId = query.from.id;
     if (userId != process.env.ADMIN_ID) return;
 
-    const [action, canal, id] = data.split("_");
+    const parts = data.split("_");
+    const action = parts[0];
+    const canal = parts[1];
+    const id = parts[2];
 
     let table, targetChatId;
     if (canal === "CANAL1") {
@@ -87,7 +91,54 @@ module.exports = (bot, pool) => {
     }
 
     try {
-      // Récupération du coupon
+      // --- GESTION DES SKIP INLINE ---
+      if (action === "skip") {
+        const session = editSessions[chatId];
+        if (!session) return;
+
+        if (parts[1] === "date") {
+          session.step = "await_time";
+          return bot.sendMessage(chatId, "⏰ Nouvelle heure (HH:mm) :", {
+            reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_time" }]] }
+          });
+        }
+
+        if (parts[1] === "time") {
+          session.step = "await_text";
+          return bot.sendMessage(chatId, "📝 Nouveau texte :", {
+            reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_text" }]] }
+          });
+        }
+
+        if (parts[1] === "text") {
+          session.step = "await_media";
+          return bot.sendMessage(chatId, "📎 Nouveau média (file_id ou URL) :", {
+            reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_media" }]] }
+          });
+        }
+
+        if (parts[1] === "media") {
+          session.step = "confirm";
+
+          const recap = `<b>✅ Récapitulatif :</b>\n` +
+            `<b>Date :</b> ${session.schedule_date}\n` +
+            `<b>Heure :</b> ${session.schedule_time}\n` +
+            `<b>Texte :</b> ${session.content}\n` +
+            `<b>Média :</b> ${session.media_url || "Aucun"}`;
+
+          return bot.sendMessage(chatId, recap, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "💾 Enregistrer", callback_data: `saveEdit_${session.canal}_${session.id}` }],
+                [{ text: "❌ Annuler", callback_data: `cancelEdit_${session.canal}_${session.id}` }]
+              ]
+            }
+          });
+        }
+      }
+
+      // --- Récupération du coupon pour les autres actions ---
       const res = await pool.query(`SELECT * FROM ${table} WHERE id=$1`, [id]);
       if (res.rows.length === 0) {
         return bot.answerCallbackQuery(query.id, { text: "❌ Coupon introuvable." });
@@ -134,6 +185,7 @@ module.exports = (bot, pool) => {
       if (action === "edit") {
         editSessions[chatId] = {
           step: "await_date",
+          canal,
           table,
           id,
           content: coupon.content,
@@ -143,7 +195,9 @@ module.exports = (bot, pool) => {
           schedule_time: coupon.schedule_time,
         };
 
-        return bot.sendMessage(chatId, "✏️ Nouvelle date (YYYY-MM-DD) ou tape skip :", { parse_mode: "HTML" });
+        return bot.sendMessage(chatId, "✏️ Nouvelle date (YYYY-MM-DD) :", {
+          reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_date" }]] }
+        });
       }
 
       // --- SAUVEGARDE MODIFICATION ---
@@ -166,7 +220,7 @@ module.exports = (bot, pool) => {
         );
 
         delete editSessions[chatId];
-        return bot.editMessageText(`✅ Coupon #${session.id} modifié avec succès !`, {
+        return bot.editMessageText(`✅ Coupon #${session.id} modifié avec succès (${session.canal}) !`, {
           chat_id: chatId,
           message_id: query.message.message_id,
         });
@@ -186,7 +240,7 @@ module.exports = (bot, pool) => {
     }
   });
 
-  // --- Workflow édition (messages) ---
+  // --- Workflow édition (messages texte) ---
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     if (!editSessions[chatId]) return;
@@ -198,21 +252,27 @@ module.exports = (bot, pool) => {
     if (session.step === "await_date") {
       if (text.toLowerCase() !== "skip") session.schedule_date = text;
       session.step = "await_time";
-      return bot.sendMessage(chatId, "⏰ Nouvelle heure (HH:mm) ou tape skip :");
+      return bot.sendMessage(chatId, "⏰ Nouvelle heure (HH:mm) :", {
+        reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_time" }]] }
+      });
     }
 
     // --- Étape HEURE ---
     if (session.step === "await_time") {
       if (text.toLowerCase() !== "skip") session.schedule_time = text;
       session.step = "await_text";
-      return bot.sendMessage(chatId, "📝 Nouveau texte ou tape skip :");
+      return bot.sendMessage(chatId, "📝 Nouveau texte :", {
+        reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_text" }]] }
+      });
     }
 
     // --- Étape TEXTE ---
     if (session.step === "await_text") {
       if (text.toLowerCase() !== "skip") session.content = text;
       session.step = "await_media";
-      return bot.sendMessage(chatId, "📎 Nouveau média (file_id ou URL) ou tape skip :");
+      return bot.sendMessage(chatId, "📎 Nouveau média (file_id ou URL) :", {
+        reply_markup: { inline_keyboard: [[{ text: "⏭ Skip", callback_data: "skip_media" }]] }
+      });
     }
 
     // --- Étape MEDIA ---
@@ -233,8 +293,8 @@ module.exports = (bot, pool) => {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "💾 Enregistrer", callback_data: `saveEdit_${session.table}_${session.id}` }],
-            [{ text: "❌ Annuler", callback_data: `cancelEdit_${session.table}_${session.id}` }]
+            [{ text: "💾 Enregistrer", callback_data: `saveEdit_${session.canal}_${session.id}` }],
+            [{ text: "❌ Annuler", callback_data: `cancelEdit_${session.canal}_${session.id}` }]
           ]
         }
       });
