@@ -1272,27 +1272,42 @@ bot.onText(/\/skip/, async (msg) => {
 // ====================== AJOUTE DES MESSAGES-FIXE ======================
 
 
+  // ======================
+// MODULE /addfixedmsg
+// Fonction pour échapper le texte pour Telegram HTML
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+
   // --- Commande /addfixedmsg ---
   bot.onText(/\/addfixedmsg/, (msg) => {
-    if (msg.from.id.toString() !== adminId) {
-      return bot.sendMessage(msg.chat.id, "❌ Tu n'es pas autorisé.");
+    const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
+
+    if (userId !== adminId) {
+      return bot.sendMessage(chatId, "❌ Tu n'es pas autorisé.");
     }
 
-    userStates[msg.from.id] = { step: "awaiting_text" };
+    userStates[userId] = { step: "awaiting_text" };
 
     bot.sendMessage(
-      msg.chat.id,
+      chatId,
       "✏️ <b>Envoie le texte principal du message fixe</b>",
       { parse_mode: "HTML" }
     );
 
     // Auto-reset après 5 minutes si l'admin ne termine pas
-    setTimeout(() => delete userStates[msg.from.id], 5 * 60 * 1000);
+    setTimeout(() => delete userStates[userId], 5 * 60 * 1000);
   });
 
   // --- Gestion des messages ---
   bot.on("message", async (msg) => {
-    const userId = msg.from.id;
+    const userId = msg.from.id.toString();
     const state = userStates[userId];
     if (!state || msg.text?.startsWith("/")) return;
 
@@ -1302,6 +1317,7 @@ bot.onText(/\/skip/, async (msg) => {
     if (state.step === "awaiting_text") {
       state.media_text = msg.text;
       state.step = "awaiting_media";
+
       return bot.sendMessage(
         chatId,
         "📎 <b>Envoie un média</b> (photo, vidéo, audio, vocal, vidéo ronde) <b>ou une URL externe</b>, ou tape <code>non</code> si tu n'en veux pas.",
@@ -1378,7 +1394,7 @@ bot.onText(/\/skip/, async (msg) => {
 
   // === Callback Queries ===
   bot.on("callback_query", async (query) => {
-    const userId = query.from.id;
+    const userId = query.from.id.toString();
     const state = userStates[userId];
     const chatId = query.message?.chat?.id;
     if (!state || !chatId) return;
@@ -1389,12 +1405,12 @@ bot.onText(/\/skip/, async (msg) => {
     if (data.startsWith("lang:")) {
       state.lang = data.split(":")[1];
 
-      // Prévisualisation
+      // Prévisualisation sécurisée
       let preview =
-        `📝 <b>Texte</b> : ${state.media_text}\n` +
-        `🕒 <b>Heure</b> : ${state.heures}\n` +
-        `🌐 <b>Langue</b> : ${state.lang}\n` +
-        `🎞 <b>Média</b> : ${state.media_type || "Aucun"}`;
+        `📝 <b>Texte</b> : ${escapeHtml(state.media_text)}\n` +
+        `🕒 <b>Heure</b> : ${escapeHtml(state.heures)}\n` +
+        `🌐 <b>Langue</b> : ${escapeHtml(state.lang)}\n` +
+        `🎞 <b>Média</b> : ${escapeHtml(state.media_type || "Aucun")}`;
 
       try {
         if (state.media_type === "photo") {
@@ -1421,7 +1437,7 @@ bot.onText(/\/skip/, async (msg) => {
           await bot.sendVideoNote(chatId, state.media_url);
           await bot.sendMessage(chatId, preview, { parse_mode: "HTML" });
         } else if (state.media_type === "url") {
-          await bot.sendMessage(chatId, `${preview}\n🔗 ${state.media_url}`, {
+          await bot.sendMessage(chatId, `${preview}\n🔗 ${escapeHtml(state.media_url)}`, {
             parse_mode: "HTML",
           });
         } else {
@@ -1479,13 +1495,9 @@ bot.onText(/\/skip/, async (msg) => {
     // Annulation
     if (data === "cancel_add_fixed") {
       delete userStates[userId];
-      await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", {
-        parse_mode: "HTML",
-      });
+      await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", { parse_mode: "HTML" });
     }
   });
-
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
