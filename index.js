@@ -1273,7 +1273,7 @@ bot.onText(/\/skip/, async (msg) => {
 
 
   // ======================
-// MODULE /addfixedmsg
+
 // Fonction pour échapper le texte pour Telegram HTML
 function escapeHtml(text) {
   if (!text) return "";
@@ -1283,7 +1283,7 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
-
+module.exports = (bot, pool) => {
   // --- Commande /addfixedmsg ---
   bot.onText(/\/addfixedmsg/, (msg) => {
     const chatId = msg.chat.id;
@@ -1405,50 +1405,38 @@ function escapeHtml(text) {
     if (data.startsWith("lang:")) {
       state.lang = data.split(":")[1];
 
-      // Prévisualisation sécurisée
-      let preview =
+      // --- Récapitulatif sécurisé ---
+      const recap =
         `📝 <b>Texte</b> : ${escapeHtml(state.media_text)}\n` +
         `🕒 <b>Heure</b> : ${escapeHtml(state.heures)}\n` +
         `🌐 <b>Langue</b> : ${escapeHtml(state.lang)}\n` +
-        `🎞 <b>Média</b> : ${escapeHtml(state.media_type || "Aucun")}`;
+        `🎞 <b>Média</b> : ${escapeHtml(state.media_type || "Aucun")}` +
+        (state.media_type === "url" && state.media_url
+          ? `\n🔗 <b>URL</b> : ${escapeHtml(state.media_url)}`
+          : "");
 
+      // Envoi du récap avec média si disponible
       try {
         if (state.media_type === "photo") {
-          await bot.sendPhoto(chatId, state.media_url, {
-            caption: preview,
-            parse_mode: "HTML",
-          });
+          await bot.sendPhoto(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
         } else if (state.media_type === "video") {
-          await bot.sendVideo(chatId, state.media_url, {
-            caption: preview,
-            parse_mode: "HTML",
-          });
-        } else if (state.media_type === "voice") {
-          await bot.sendVoice(chatId, state.media_url, {
-            caption: preview,
-            parse_mode: "HTML",
-          });
+          await bot.sendVideo(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
         } else if (state.media_type === "audio") {
-          await bot.sendAudio(chatId, state.media_url, {
-            caption: preview,
-            parse_mode: "HTML",
-          });
+          await bot.sendAudio(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
+        } else if (state.media_type === "voice") {
+          await bot.sendVoice(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
         } else if (state.media_type === "video_note") {
           await bot.sendVideoNote(chatId, state.media_url);
-          await bot.sendMessage(chatId, preview, { parse_mode: "HTML" });
-        } else if (state.media_type === "url") {
-          await bot.sendMessage(chatId, `${preview}\n🔗 ${escapeHtml(state.media_url)}`, {
-            parse_mode: "HTML",
-          });
+          await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
         } else {
-          await bot.sendMessage(chatId, preview, { parse_mode: "HTML" });
+          await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
         }
       } catch (err) {
-        console.error("Erreur preview:", err.message);
-        await bot.sendMessage(chatId, preview, { parse_mode: "HTML" });
+        console.error("Erreur prévisualisation :", err.message);
+        await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
       }
 
-      // Confirmation
+      // Boutons de confirmation
       return bot.sendMessage(chatId, "✅ <b>Confirmer l'enregistrement ?</b>", {
         parse_mode: "HTML",
         reply_markup: {
@@ -1498,7 +1486,6 @@ function escapeHtml(text) {
       await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", { parse_mode: "HTML" });
     }
   });
-
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
