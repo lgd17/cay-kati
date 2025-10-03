@@ -1,5 +1,5 @@
 const fetch = require("node-fetch");
-const { bot } = require("./server"); // <-- bot déjà importé
+const bot = require("./bot");
 const ADMIN_ID = process.env.ADMIN_ID;
 
 const URL = process.env.PING_URL || "https://onexadmin-bot.onrender.com";
