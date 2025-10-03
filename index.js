@@ -1551,6 +1551,16 @@ bot.on("callback_query", async (query) => {
 // === /addfixedmsg2 pour le Canal2 ===
 
 
+// Fonction pour échapper le texte HTML
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// --- Commande /addfixedmsg2 ---
 bot.onText(/\/addfixedmsg2/, async (msg) => {
   if (msg.from.id.toString() !== ADMIN_ID) return;
   const chatId = msg.chat.id;
@@ -1612,20 +1622,10 @@ bot.on("message", async (msg) => {
     // Étape 3 → Heures
     if (state.step === 'awaiting_hours') {
       state.heures = msg.text;
+      state.step = 'awaiting_confirmation';
 
-      // Prévisualisation avant insertion
-      await previewMessage(chatId, state);
-
-      // Insertion en base
-      const insertQuery = `
-        INSERT INTO message_fixes2 (media_text, media_url, media_type, heures)
-        VALUES ($1,$2,$3,$4) RETURNING id
-      `;
-      const res = await pool.query(insertQuery, [state.text, state.media_url, state.media_type, state.heures]);
-      const newId = res.rows[0].id;
-
-      await bot.sendMessage(chatId, `✅ Message ajouté pour Canal2 avec ID ${newId}.`);
-      delete addStates2[chatId];
+      // Prévisualisation avec boutons de confirmation
+      await sendPreviewWithConfirmation(chatId, state);
     }
 
   } catch (err) {
@@ -1635,9 +1635,10 @@ bot.on("message", async (msg) => {
   }
 });
 
-// === Fonction de prévisualisation pour Canal2 ===
-async function previewMessage(chatId, state) {
-  let previewText = `📝 Texte : ${state.text}\n⏰ Heures : ${state.heures}\n🎞 Média : ${state.media_type || "Aucun"}`;
+// === Fonction de prévisualisation avec confirmation ===
+async function sendPreviewWithConfirmation(chatId, state) {
+  const safeText = escapeHtml(state.text);
+  const previewText = `📝 Texte : ${safeText}\n⏰ Heures : ${escapeHtml(state.heures)}\n🎞 Média : ${escapeHtml(state.media_type || "Aucun")}`;
 
   try {
     switch (state.media_type) {
@@ -1660,15 +1661,136 @@ async function previewMessage(chatId, state) {
         break;
       default:
         if (state.media_url?.startsWith("http")) {
-          await bot.sendMessage(chatId, `${previewText}\n🔗 ${state.media_url}`, { parse_mode: "HTML" });
+          await bot.sendMessage(chatId, `${previewText}\n🔗 ${escapeHtml(state.media_url)}`, { parse_mode: "HTML" });
         } else {
           await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         }
         break;
     }
+
+    // Boutons de confirmation
+    await bot.sendMessage(chatId, "✅ Confirmer l'enregistrement du message ?", {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirmer", callback_data: "confirm_fixed2" },
+            { text: "❌ Annuler", callback_data: "cancel_fixed2" },
+          ]
+        ]
+      }
+    });
+
   } catch (err) {
     console.error("❌ Erreur prévisualisation :", err.message);
-    await bot.sendMessage(chatId, `❌ Erreur prévisualisation : ${err.message}`);
+    await bot.sendMessage(chatId, `❌ Erreur prévisualisation : ${escapeHtml(err.message)}`);
   }
 }
 
+// === Gestion des callback pour confirmation ===
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const state = addStates2[chatId];
+  if (!state) return;
+
+  if (data === "confirm_fixed2") {
+    try {
+      const insertQuery = `
+        INSERT INTO message_fixes2 (media_text, media_url, media_type, heures)
+        VALUES ($1,$2,$3,$4) RETURNING id
+      `;
+      const res = await pool.query(insertQuery, [state.text, state.media_url, state.media_type, state.heures]);
+      const newId = res.rows[0].id;
+      await bot.sendMessage(chatId, `✅ Message ajouté pour Canal2 avec ID ${newId}.`);
+    } catch (err) {
+      console.error(err);
+      await bot.sendMessage(chatId, "❌ Erreur en base de données.");
+    }
+    delete addStates2[chatId];
+    await bot.answerCallbackQuery(query.id);
+  }
+
+  if (data === "cancel_fixed2") {
+    delete addStates2[chatId];
+    await bot.sendMessage(chatId, "❌ Ajout annulé.");
+    await bot.answerCallbackQuery(query.id);
+  }
+});
+
+// --- Commande /testfixed2 ---
+bot.onText(/\/testfixed2/, async (msg) => {
+  if (msg.from.id.toString() !== ADMIN_ID) return;
+  const chatId = msg.chat.id;
+
+  try {
+    const { rows } = await pool.query("SELECT id, media_text, media_url, media_type, heures FROM message_fixes2 ORDER BY id");
+    if (rows.length === 0) return bot.sendMessage(chatId, "📭 Aucun message fixe trouvé pour Canal2.");
+
+    for (const row of rows) {
+      const buttons = [
+        [{ text: "🧪 Tester", callback_data: `test2_${row.id}` }],
+      ];
+      const mediaInfo = row.media_url ? `🎞 ${row.media_type || "Inconnu"}` : "❌ Aucun";
+      const text = `🆔 ID: ${row.id}\n📄 Texte: ${row.media_text}\n🎞 Média: ${mediaInfo}\n⏰ Heures: ${row.heures}`;
+      await bot.sendMessage(chatId, text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons }
+      });
+    }
+
+  } catch (err) {
+    console.error("❌ Erreur /testfixed2 :", err);
+    await bot.sendMessage(chatId, "❌ Erreur lors de la récupération des messages.");
+  }
+});
+
+// --- Callback pour tester un message précis ---
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+
+  if (!data.startsWith("test2_")) return;
+
+  const id = data.split("_")[1];
+
+  try {
+    const { rows } = await pool.query("SELECT * FROM message_fixes2 WHERE id=$1", [id]);
+    const row = rows[0];
+    if (!row) return bot.sendMessage(chatId, "❌ Message introuvable.");
+
+    const previewText = `📝 Texte : ${row.media_text}\n⏰ Heures : ${row.heures}\n🎞 Média : ${row.media_type || "Aucun"}`;
+
+    switch (row.media_type) {
+      case "photo":
+        await bot.sendPhoto(chatId, row.media_url, { caption: previewText, parse_mode: "HTML" });
+        break;
+      case "video":
+        await bot.sendVideo(chatId, row.media_url, { caption: previewText, parse_mode: "HTML" });
+        break;
+      case "audio":
+        await bot.sendAudio(chatId, row.media_url, { caption: previewText, parse_mode: "HTML" });
+        break;
+      case "voice":
+        await bot.sendVoice(chatId, row.media_url);
+        await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
+        break;
+      case "video_note":
+        await bot.sendVideoNote(chatId, row.media_url);
+        await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
+        break;
+      case "url":
+        await bot.sendMessage(chatId, `${previewText}\n🔗 ${row.media_url}`, { parse_mode: "HTML" });
+        break;
+      default:
+        await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
+    }
+
+    await bot.answerCallbackQuery(query.id);
+
+  } catch (err) {
+    console.error("❌ Erreur test callback :", err);
+    await bot.sendMessage(chatId, "❌ Impossible d'envoyer le message de test.");
+    await bot.answerCallbackQuery(query.id);
+  }
+});
