@@ -1502,7 +1502,6 @@ bot.on("callback_query", async (query) => {
 
 //--- COMMANDE /fixedmenu ---
 
-/ Commande pour tester tous les messages fixes
   bot.onText(/\/testfixedmsg/, async (msg) => {
     const chatId = msg.chat.id;
 
