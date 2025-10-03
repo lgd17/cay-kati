@@ -1271,6 +1271,7 @@ bot.onText(/\/skip/, async (msg) => {
                        //=== COMMANDE /addfixedmsg ===\\
 // ====================== AJOUTE DES MESSAGES-FIXE ======================
 
+// Fonction pour échapper le texte pour Telegram HTML
 function escapeHtml(text) {
   if (!text) return "";
   return text
@@ -1279,213 +1280,218 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
+// --- Commande /addfixedmsg ---
+bot.onText(/\/addfixedmsg/, (msg) => {
+  if (msg.from.id.toString() !== adminId) {
+    return bot.sendMessage(msg.chat.id, "❌ Tu n'es pas autorisé.");
+  }
 
-  // --- Commande /addfixedmsg ---
-  bot.onText(/\/addfixedmsg/, (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id.toString();
+  userStates[msg.from.id] = { step: "awaiting_text" };
 
-    if (userId !== adminId) {
-      return bot.sendMessage(chatId, "❌ Tu n'es pas autorisé.");
-    }
+  bot.sendMessage(
+    msg.chat.id,
+    "✏️ <b>Envoie le texte principal du message fixe</b>",
+    { parse_mode: "HTML" }
+  );
 
-    userStates[userId] = { step: "awaiting_text" };
+  // Auto-reset après 5 minutes si l'admin ne termine pas
+  setTimeout(() => delete userStates[msg.from.id], 5 * 60 * 1000);
+});
 
-    bot.sendMessage(
+// --- Gestion des messages ---
+bot.on("message", async (msg) => {
+  const userId = msg.from.id;
+  const state = userStates[userId];
+  if (!state || msg.text?.startsWith("/")) return;
+
+  const chatId = msg.chat.id;
+
+  // Étape 1 : Texte
+  if (state.step === "awaiting_text") {
+    state.media_text = msg.text;
+    state.step = "awaiting_media";
+    return bot.sendMessage(
       chatId,
-      "✏️ <b>Envoie le texte principal du message fixe</b>",
+      "📎 <b>Envoie un média</b> (photo, vidéo, audio, vocal, vidéo ronde) <b>ou une URL externe</b>, ou tape <code>non</code> si tu n'en veux pas.",
       { parse_mode: "HTML" }
     );
+  }
 
-    // Auto-reset après 5 minutes si l'admin ne termine pas
-    setTimeout(() => delete userStates[userId], 5 * 60 * 1000);
-  });
-
-  // --- Gestion des messages ---
-  bot.on("message", async (msg) => {
-    const userId = msg.from.id.toString();
-    const state = userStates[userId];
-    if (!state || msg.text?.startsWith("/")) return;
-
-    const chatId = msg.chat.id;
-
-    // Étape 1 : Texte
-    if (state.step === "awaiting_text") {
-      state.media_text = msg.text;
-      state.step = "awaiting_media";
-
+  // Étape 2 : Média ou 'non'
+  if (state.step === "awaiting_media") {
+    if (msg.text && msg.text.toLowerCase() === "non") {
+      state.media_url = null;
+      state.media_type = null;
+    } else if (msg.photo) {
+      state.media_url = msg.photo[msg.photo.length - 1].file_id;
+      state.media_type = "photo";
+    } else if (msg.video) {
+      state.media_url = msg.video.file_id;
+      state.media_type = "video";
+    } else if (msg.voice) {
+      state.media_url = msg.voice.file_id;
+      state.media_type = "voice";
+    } else if (msg.audio) {
+      state.media_url = msg.audio.file_id;
+      state.media_type = "audio";
+    } else if (msg.video_note) {
+      state.media_url = msg.video_note.file_id;
+      state.media_type = "video_note";
+    } else if (msg.text && msg.text.startsWith("http")) {
+      state.media_url = msg.text;
+      state.media_type = "url";
+    } else {
       return bot.sendMessage(
         chatId,
-        "📎 <b>Envoie un média</b> (photo, vidéo, audio, vocal, vidéo ronde) <b>ou une URL externe</b>, ou tape <code>non</code> si tu n'en veux pas.",
+        "⛔ <b>Format non reconnu</b>. Envoie une image, vidéo, audio, vocal, vidéo ronde, URL ou tape <code>non</code>.",
         { parse_mode: "HTML" }
       );
     }
 
-    // Étape 2 : Média ou 'non'
-    if (state.step === "awaiting_media") {
-      if (msg.text && msg.text.toLowerCase() === "non") {
-        state.media_url = null;
-        state.media_type = null;
-      } else if (msg.photo) {
-        state.media_url = msg.photo[msg.photo.length - 1].file_id;
-        state.media_type = "photo";
-      } else if (msg.video) {
-        state.media_url = msg.video.file_id;
-        state.media_type = "video";
-      } else if (msg.voice) {
-        state.media_url = msg.voice.file_id;
-        state.media_type = "voice";
-      } else if (msg.audio) {
-        state.media_url = msg.audio.file_id;
-        state.media_type = "audio";
-      } else if (msg.video_note) {
-        state.media_url = msg.video_note.file_id;
-        state.media_type = "video_note";
-      } else if (msg.text && msg.text.startsWith("http")) {
-        state.media_url = msg.text;
-        state.media_type = "url";
-      } else {
-        return bot.sendMessage(
-          chatId,
-          "⛔ <b>Format non reconnu</b>. Envoie une image, vidéo, audio, vocal, vidéo ronde, URL ou tape <code>non</code>.",
-          { parse_mode: "HTML" }
-        );
-      }
+    state.step = "awaiting_time";
+    return bot.sendMessage(
+      chatId,
+      "🕒 <b>Envoie l'heure d'envoi</b> (format <code>HH:MM</code>, ex : <code>08:30</code>).",
+      { parse_mode: "HTML" }
+    );
+  }
 
-      state.step = "awaiting_time";
+  // Étape 3 : Heure
+  if (state.step === "awaiting_time") {
+    const regex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    if (!regex.test(msg.text.trim())) {
       return bot.sendMessage(
         chatId,
-        "🕒 <b>Envoie l'heure d'envoi</b> (format <code>HH:MM</code>, ex : <code>08:30</code>).",
+        "⛔ <b>Format invalide</b>. Utilise <code>HH:MM</code> (ex : <code>09:30</code>, <code>22:00</code>).",
         { parse_mode: "HTML" }
       );
     }
 
-    // Étape 3 : Heure
-    if (state.step === "awaiting_time") {
-      const regex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
-      if (!regex.test(msg.text.trim())) {
-        return bot.sendMessage(
-          chatId,
-          "⛔ <b>Format invalide</b>. Utilise <code>HH:MM</code> (ex : <code>09:30</code>, <code>22:00</code>).",
-          { parse_mode: "HTML" }
-        );
-      }
+    state.heures = msg.text.trim();
+    state.step = "awaiting_lang";
 
-      state.heures = msg.text.trim();
-      state.step = "awaiting_lang";
-
-      return bot.sendMessage(chatId, "🌐 <b>Choisis la langue du message fixe</b> :", {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "🇫🇷 FR", callback_data: "lang:FR" },
-              { text: "🇬🇧 EN", callback_data: "lang:EN" },
-            ],
+    return bot.sendMessage(chatId, "🌐 <b>Choisis la langue du message fixe</b> :", {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🇫🇷 FR", callback_data: "lang:FR" },
+            { text: "🇬🇧 EN", callback_data: "lang:EN" },
           ],
-        },
-      });
+        ],
+      },
+    });
+  }
+});
+
+// === Callback Queries ===
+bot.on("callback_query", async (query) => {
+  const userId = query.from.id;
+  const state = userStates[userId];
+  const chatId = query.message?.chat?.id;
+  if (!state || !chatId) return;
+
+  const data = query.data;
+
+  // Choix langue
+  if (data.startsWith("lang:")) {
+    state.lang = data.split(":")[1];
+
+    // Récapitulatif échappé
+    let recap =
+      `📝 <b>Texte</b> : ${escapeHtml(state.media_text)}\n` +
+      `🕒 <b>Heure</b> : ${escapeHtml(state.heures)}\n` +
+      `🌐 <b>Langue</b> : ${escapeHtml(state.lang)}\n` +
+      `🎞 <b>Média</b> : ${escapeHtml(state.media_type || "Aucun")}`;
+
+    if (state.media_type === "url" && state.media_url) {
+      recap += `\n🔗 <b>URL</b> : ${escapeHtml(state.media_url)}`;
     }
-  });
 
-  // === Callback Queries ===
-  bot.on("callback_query", async (query) => {
-    const userId = query.from.id.toString();
-    const state = userStates[userId];
-    const chatId = query.message?.chat?.id;
-    if (!state || !chatId) return;
-
-    const data = query.data;
-
-    // Choix langue
-    if (data.startsWith("lang:")) {
-      state.lang = data.split(":")[1];
-
-      // --- Récapitulatif sécurisé ---
-      const recap =
-        `📝 <b>Texte</b> : ${escapeHtml(state.media_text)}\n` +
-        `🕒 <b>Heure</b> : ${escapeHtml(state.heures)}\n` +
-        `🌐 <b>Langue</b> : ${escapeHtml(state.lang)}\n` +
-        `🎞 <b>Média</b> : ${escapeHtml(state.media_type || "Aucun")}` +
-        (state.media_type === "url" && state.media_url
-          ? `\n🔗 <b>URL</b> : ${escapeHtml(state.media_url)}`
-          : "");
-
-      try {
-        if (state.media_type === "photo") {
-          await bot.sendPhoto(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
-        } else if (state.media_type === "video") {
-          await bot.sendVideo(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
-        } else if (state.media_type === "audio") {
-          await bot.sendAudio(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
-        } else if (state.media_type === "voice") {
-          await bot.sendVoice(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
-        } else if (state.media_type === "video_note") {
-          await bot.sendVideoNote(chatId, state.media_url);
-          await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
-        } else {
-          await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
-        }
-      } catch (err) {
-        console.error("Erreur prévisualisation :", err.message);
+    try {
+      if (state.media_type === "photo") {
+        await bot.sendPhoto(chatId, state.media_url, {
+          caption: recap,
+          parse_mode: "HTML",
+        });
+      } else if (state.media_type === "video") {
+        await bot.sendVideo(chatId, state.media_url, {
+          caption: recap,
+          parse_mode: "HTML",
+        });
+      } else if (state.media_type === "voice") {
+        await bot.sendVoice(chatId, state.media_url, {
+          caption: recap,
+          parse_mode: "HTML",
+        });
+      } else if (state.media_type === "audio") {
+        await bot.sendAudio(chatId, state.media_url, {
+          caption: recap,
+          parse_mode: "HTML",
+        });
+      } else if (state.media_type === "video_note") {
+        await bot.sendVideoNote(chatId, state.media_url);
+        await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
+      } else {
         await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
       }
-
-      // Boutons de confirmation
-      await bot.sendMessage(chatId, "✅ <b>Confirmer l'enregistrement ?</b>", {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "✅ Confirmer", callback_data: "confirm_add_fixed" },
-              { text: "❌ Annuler", callback_data: "cancel_add_fixed" },
-            ],
-          ],
-        },
-      });
-
-      // ⛔ STOP ici → éviter de tomber sur les autres conditions
-      return;
+    } catch (err) {
+      console.error("Erreur preview:", err.message);
+      await bot.sendMessage(chatId, recap, { parse_mode: "HTML" });
     }
 
-    // Confirmation ajout
-    if (data === "confirm_add_fixed") {
-      try {
-        await pool.query(
-          `INSERT INTO message_fixes (media_text, media_url, heures, media_type, lang)
-           VALUES ($1, $2, $3, $4, $5)`,
+    // Confirmation
+    return bot.sendMessage(chatId, "✅ <b>Confirmer l'enregistrement ?</b>", {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
           [
-            state.media_text,
-            state.media_url,
-            state.heures,
-            state.media_type,
-            state.lang,
-          ]
-        );
-        await bot.sendMessage(
-          chatId,
-          "✅ <b>Message fixe enregistré avec succès !</b>",
-          { parse_mode: "HTML" }
-        );
-      } catch (err) {
-        console.error(err);
-        await bot.sendMessage(
-          chatId,
-          "❌ <b>Erreur lors de l'enregistrement en base.</b>",
-          { parse_mode: "HTML" }
-        );
-      }
-      delete userStates[userId];
-      return;
-    }
+            { text: "✅ Confirmer", callback_data: "confirm_add_fixed" },
+            { text: "❌ Annuler", callback_data: "cancel_add_fixed" },
+          ],
+        ],
+      },
+    });
+  }
 
-    // Annulation
-    if (data === "cancel_add_fixed") {
-      delete userStates[userId];
-      await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", { parse_mode: "HTML" });
-      return;
+  // Confirmation ajout
+  if (data === "confirm_add_fixed") {
+    try {
+      await pool.query(
+        `INSERT INTO message_fixes (media_text, media_url, heures, media_type, lang)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          state.media_text,
+          state.media_url,
+          state.heures,
+          state.media_type,
+          state.lang,
+        ]
+      );
+      await bot.sendMessage(
+        chatId,
+        "✅ <b>Message fixe enregistré avec succès !</b>",
+        { parse_mode: "HTML" }
+      );
+    } catch (err) {
+      console.error(err);
+      await bot.sendMessage(
+        chatId,
+        "❌ <b>Erreur lors de l'enregistrement en base.</b>",
+        { parse_mode: "HTML" }
+      );
     }
-  });
+    delete userStates[userId];
+  }
+
+  // Annulation
+  if (data === "cancel_add_fixed") {
+    delete userStates[userId];
+    await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", {
+      parse_mode: "HTML",
+    });
+  }
+});
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
