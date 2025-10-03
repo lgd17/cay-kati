@@ -1271,10 +1271,6 @@ bot.onText(/\/skip/, async (msg) => {
                        //=== COMMANDE /addfixedmsg ===\\
 // ====================== AJOUTE DES MESSAGES-FIXE ======================
 
-
-  // ======================
-
-// Fonction pour échapper le texte pour Telegram HTML
 function escapeHtml(text) {
   if (!text) return "";
   return text
@@ -1415,7 +1411,6 @@ module.exports = (bot, pool) => {
           ? `\n🔗 <b>URL</b> : ${escapeHtml(state.media_url)}`
           : "");
 
-      // Envoi du récap avec média si disponible
       try {
         if (state.media_type === "photo") {
           await bot.sendPhoto(chatId, state.media_url, { caption: recap, parse_mode: "HTML" });
@@ -1437,7 +1432,7 @@ module.exports = (bot, pool) => {
       }
 
       // Boutons de confirmation
-      return bot.sendMessage(chatId, "✅ <b>Confirmer l'enregistrement ?</b>", {
+      await bot.sendMessage(chatId, "✅ <b>Confirmer l'enregistrement ?</b>", {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
@@ -1448,6 +1443,9 @@ module.exports = (bot, pool) => {
           ],
         },
       });
+
+      // ⛔ STOP ici → éviter de tomber sur les autres conditions
+      return;
     }
 
     // Confirmation ajout
@@ -1478,15 +1476,17 @@ module.exports = (bot, pool) => {
         );
       }
       delete userStates[userId];
+      return;
     }
 
     // Annulation
     if (data === "cancel_add_fixed") {
       delete userStates[userId];
       await bot.sendMessage(chatId, "❌ <b>Ajout annulé.</b>", { parse_mode: "HTML" });
+      return;
     }
   });
-
+};
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
