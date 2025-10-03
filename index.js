@@ -1279,7 +1279,7 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
-module.exports = (bot, pool) => {
+
   // --- Commande /addfixedmsg ---
   bot.onText(/\/addfixedmsg/, (msg) => {
     const chatId = msg.chat.id;
@@ -1486,7 +1486,7 @@ module.exports = (bot, pool) => {
       return;
     }
   });
-};
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
