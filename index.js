@@ -1502,7 +1502,49 @@ bot.on("callback_query", async (query) => {
 
 //--- COMMANDE /fixedmenu ---
 
+/ Commande pour tester tous les messages fixes
+  bot.onText(/\/testfixedmsg/, async (msg) => {
+    const chatId = msg.chat.id;
 
+    try {
+      const { rows } = await pool.query("SELECT * FROM message_fixes ORDER BY id");
+      if (rows.length === 0) return bot.sendMessage(chatId, "📭 Aucun message fixe trouvé.");
+
+      for (const row of rows) {
+        try {
+          // Envoi selon type de média
+          if (row.media_type === "photo") {
+            await bot.sendPhoto(chatId, row.media_url, { caption: row.media_text, parse_mode: "HTML" });
+          } else if (row.media_type === "video") {
+            if (row.media_url.startsWith("http")) {
+              await bot.sendMessage(chatId, `🔗 [Vidéo externe](${row.media_url})\n${row.media_text}`, { parse_mode: "Markdown" });
+            } else {
+              await bot.sendVideo(chatId, row.media_url, { caption: row.media_text, parse_mode: "HTML" });
+            }
+          } else if (row.media_type === "voice") {
+            await bot.sendVoice(chatId, row.media_url, { caption: row.media_text });
+          } else if (row.media_type === "audio") {
+            await bot.sendAudio(chatId, row.media_url, { caption: row.media_text });
+          } else if (row.media_type === "video_note") {
+            await bot.sendVideoNote(chatId, row.media_url);
+            await bot.sendMessage(chatId, row.media_text, { parse_mode: "HTML" });
+          } else if (row.media_type === "url") {
+            await bot.sendMessage(chatId, `${row.media_text}\n🔗 ${row.media_url}`, { parse_mode: "HTML" });
+          } else {
+            await bot.sendMessage(chatId, row.media_text, { parse_mode: "HTML" });
+          }
+
+          await bot.sendMessage(chatId, `✅ Message fixe ID *${row.id}* testé avec succès.`, { parse_mode: "Markdown" });
+        } catch (err) {
+          console.error("Erreur en test:", err);
+          await bot.sendMessage(chatId, `❌ Impossible d'envoyer le message fixe ID ${row.id}.`);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      bot.sendMessage(chatId, "❌ Erreur lors de la récupération des messages fixes.");
+    }
+  });
 
 // ====================== LISTES DES MESSAGES-FIXE ======================
 
