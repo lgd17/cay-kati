@@ -4,9 +4,10 @@ require("./pingCron");
 require("./autoSend");
 require("./autoSender");
 require('./cleanLogs');
-require('./dailyScheduler')
+require('./dailyScheduler');
+require("./cleanOldCoupons");
 const { app, bot } = require("./server");
-const { ping } = require("./pingServer")
+const { ping } = require("./pingServer");
 
 // Forcer l’environnement à utiliser l’heure de Lomé
 process.env.TZ = 'Africa/Lome';
