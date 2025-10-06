@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const TelegramBot = require("node-telegram-bot-api");
 const sendFixedMessagesDaily = require("./sendFixedMessagesDaily");
 const sendFixedMessages = require("./sendFixedMessages");
+const { sendManualCoupon, generateAndSendCoupon, cleanOldData } = require("./autoSend");
 
 // ====== CONFIGURATION ENV ======
 const PORT = process.env.PORT || 3000; // Render fournit le PORT automatiquement
@@ -24,37 +25,18 @@ bot.setWebHook(`${baseUrl}/bot${encodedToken}`)
   .then(() => console.log(`✅ Webhook configuré : ${baseUrl}/bot${encodedToken}`))
   .catch(err => console.error("❌ Erreur lors du setWebhook :", err));
 
-// ====== ROUTES ======
+// ====== ROUTES BOT ======
 app.post(`/bot${encodedToken}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-app.get("/ping", (req, res) => res.status(200).send("✅ Bot is awake!"));
-
-app.get("/", (req, res) => res.send("✅ Bot Telegram en ligne"));
-
-// Routes Cron
-app.get("/cron-task/manual-coupon", async (req, res) => {
-  try {
-    await sendManualCoupon();
-    await cleanOldData();
-    res.send("✅ Coupons manuels envoyés et nettoyage effectué");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("❌ Erreur manuel coupon / nettoyage");
-  }
+// ====== ENDPOINT DE PING ======
+app.get("/ping", (req, res) => {
+  console.log("💡 /ping reçu – bot réveillé !");
+  res.status(200).send("✅ Bot is awake and running!");
 });
 
-app.get("/cron-task/api-coupon", async (req, res) => {
-  try {
-    await generateAndSendCoupon();
-    res.send("✅ Coupons API envoyés");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("❌ Erreur génération coupons API");
-  }
-});
 
 // ====== LANCEMENT SERVEUR ======
 app.listen(PORT, () => {
