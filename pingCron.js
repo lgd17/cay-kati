@@ -1,27 +1,28 @@
-const { ping } = require("./pingServer");
+const { ping } = require("./pingServer"); // ping interne du Bot2
 const schedule = require("node-schedule");
 
-// Vérifie si on est entre 5h30 et 3h30 du lendemain
+// ---------- 1️⃣ Ping interne à partir de 05:07 ----------
 function isWithinPingHours() {
   const now = new Date();
-  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
-  // 5:30 = 330 min, 3:30 = 210 min (du lendemain)
-  return minutesSinceMidnight >= 330 || minutesSinceMidnight <= 210;
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  // Plage 05:07 → 03:30 du lendemain
+  return (hours > 5 || (hours === 5 && minutes >= 7)) || (hours < 3 || (hours === 3 && minutes <= 30));
 }
 
-// Job cron toutes les 14 minutes
-schedule.scheduleJob('*/14 * * * *', async () => {
+// Job cron toutes les 14 minutes pour le ping interne
+schedule.scheduleJob("*/14 * * * *", async () => {
   if (!isWithinPingHours()) return;
 
   try {
     await ping();
-    console.log(`⏰ Ping exécuté à ${new Date().toLocaleTimeString()}`);
+    console.log(`⏰ Ping interne Bot2 exécuté à ${new Date().toLocaleTimeString()}`);
   } catch (err) {
-    console.error("❌ Erreur ping cron :", err.message);
+    console.error("❌ Erreur ping interne Bot2 :", err.message);
   }
 });
 
-// Ping immédiat au démarrage si dans la plage
+// Ping immédiat si Bot2 démarre entre 05:07 et 03:30
 if (isWithinPingHours()) {
-  ping().catch(err => console.error("❌ Erreur ping immédiat :", err.message));
+  ping().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
 }
