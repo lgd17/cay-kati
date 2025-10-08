@@ -27,6 +27,8 @@ const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map(Number);
 
 // Importer les commandes
 require("./ajouter_coupon")(bot, pool);
+const testMessagesInteractive = require("./testMessagesInteractive");
+testMessagesInteractive(bot, pool);
 
 // ====== GESTION DES ÉTATS ======
 const MAX_FILE_SIZE = 100000000;
