@@ -16,36 +16,56 @@ let cache = {
   lastRefresh: null
 };
 
+// =================== RETRY UTILE ===================
+async function retry(fn, retries = 3, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.warn(`⚠️ Tentative ${i + 1} échouée: ${err.message}`);
+      if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      else throw err;
+    }
+  }
+}
+
 // =================== FONCTIONS CHARGEMENT ===================
 
 // Canal principal
 async function loadMessages() {
-  try {
-    const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
-    cache.messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
-    cache.messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
-    cache.lastRefresh = Date.now();
+  const res = await pool.query("SELECT * FROM message_fixes ORDER BY id");
+  cache.messagesFR = res.rows.filter(m => m.lang?.toLowerCase() === "fr");
+  cache.messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
+  cache.lastRefresh = Date.now();
 
-    console.log(`📥 ${cache.messagesFR.length} messages FR et ${cache.messagesEN.length} messages EN rechargés.`);
-    if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
-  } catch (err) {
-    console.error("❌ Erreur en chargeant les messages Canal1 :", err.message);
-    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal1 : ${err.message}`);
-  }
+  console.log(`📥 ${cache.messagesFR.length} messages FR et ${cache.messagesEN.length} messages EN rechargés.`);
+  if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
 }
 
 // Canal2
 async function loadMessagesCanal2() {
-  try {
-    const res = await pool.query("SELECT * FROM message_fixes2 ORDER BY id");
-    cache.messagesCanal2 = res.rows;
-    cache.lastRefresh = Date.now();
+  const res = await pool.query("SELECT * FROM message_fixes2 ORDER BY id");
+  cache.messagesCanal2 = res.rows;
+  cache.lastRefresh = Date.now();
 
-    console.log(`📥 ${cache.messagesCanal2.length} messages Canal2 rechargés.`);
-    if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  console.log(`📥 ${cache.messagesCanal2.length} messages Canal2 rechargés.`);
+  if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+}
+
+// Chargement sécurisé avec retry
+async function loadMessagesSafe() {
+  try {
+    await retry(loadMessages, 3, 3000);
   } catch (err) {
-    console.error("❌ Erreur en chargeant les messages Canal2 :", err.message);
-    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur Canal2 : ${err.message}`);
+    console.error("❌ Échec définitif Canal1 :", err.message);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal1 : ${err.message}`);
+  }
+
+  try {
+    await retry(loadMessagesCanal2, 3, 3000);
+  } catch (err) {
+    console.error("❌ Échec définitif Canal2 :", err.message);
+    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal2 : ${err.message}`);
   }
 }
 
@@ -165,22 +185,22 @@ async function sendScheduledMessagesCanal2() {
 
 // =================== CRON ===================
 
-// Chargement initial
-loadMessages();
-loadMessagesCanal2();
+// Chargement initial avec retry
+(async () => {
+  console.log("⏱️ Chargement initial des messages Canal1 et Canal2...");
+  await loadMessagesSafe();
+})();
 
-// rechargement a 05:45 minutes
-cron.schedule("45 5 * * *", async () => { 
-  console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé..."); 
-  await loadMessages();
-  await loadMessagesCanal2();
+// Rechargement à 05:45
+cron.schedule("45 5 * * *", async () => {
+  console.log("⏱️ Rechargement messages Canal1 et Canal2 à 05:45 Lomé...");
+  await loadMessagesSafe();
 }, { timezone: "Africa/Lome" });
 
-// Refresh toutes les 5 minutes
+// Refresh toutes les 30 minutes
 cron.schedule("*/30 * * * *", async () => {
-  console.log("♻️ Refresh auto des messages (cache Supabase).");
-  await loadMessages();
-  await loadMessagesCanal2();
+  console.log("♻️ Refresh auto des messages (cache Supabase)...");
+  await loadMessagesSafe();
 }, { timezone: "Africa/Lome" });
 
 // Vérification chaque minute
@@ -192,4 +212,3 @@ cron.schedule("* * * * *", async () => {
 console.log("✅ autoSend.js lancé avec cache + refresh optimisé.");
 
 module.exports = { loadMessages, sendScheduledMessages };
-
