@@ -14,8 +14,12 @@ process.env.TZ = 'Africa/Lome';
 const moment = require('moment-timezone');
 const { sendCoupons } = require("./couponScheduler");
 const { pool, insertManualCoupon } = require("./db");
+const axios = require("axios");
+
 
 const ADMIN_ID = process.env.ADMIN_ID;
+const MAIN_BOT_TOKEN = process.env.BOT_MAIN_TOKEN;
+const MAIN_BOT_ID = process.env.BOT_MAIN_ID; // Bot principal
 
 // ====== CONFIGURATION ENV ======
 const PORT = process.env.PORT || 3000;
@@ -165,6 +169,7 @@ bot.onText(/\/admin_menu/, (msg) => {
                     //=== COMMANDE /ajouter_prono ===\\
 // ====================== AJOUT MANUEL DE PRONO ======================
 // --- Commande /voir_pronos ---
+// --- Commande /ajouter_prono ---
 bot.onText(/\/ajouter_prono/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -176,7 +181,7 @@ bot.onText(/\/ajouter_prono/, (msg) => {
     step: "awaiting_date",
     date: null,
     content: null,
-    type: "gratuit", // par défaut
+    type: "gratuit",
     mediaUrl: null,
     mediaType: null,
   };
@@ -195,7 +200,7 @@ bot.onText(/\/today/, (msg) => {
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  state.date = today.toISOString().slice(0, 10); // YYYY-MM-DD
+  state.date = today.toISOString().slice(0, 10);
   state.step = "awaiting_content";
 
   bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
@@ -213,13 +218,11 @@ bot.on("message", async (msg) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(inputDate)) {
       return bot.sendMessage(chatId, "⚠️ Format invalide. Utilise YYYY-MM-DD.");
     }
-
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     if (new Date(inputDate) < today) {
       return bot.sendMessage(chatId, "❌ La date ne peut pas être dans le passé.");
     }
-
     state.date = inputDate;
     state.step = "awaiting_content";
     return bot.sendMessage(chatId, "📝 Envoie maintenant le texte du prono.");
@@ -230,18 +233,16 @@ bot.on("message", async (msg) => {
     if (!msg.text || msg.text.trim().length < 5) {
       return bot.sendMessage(chatId, "⚠️ Le texte du prono est trop court.");
     }
-
     state.content = msg.text.trim();
     state.step = "awaiting_type";
 
-    // --- Choix du type de prono ---
     return bot.sendMessage(chatId, "🎯 Choisis le type de prono :", {
       reply_markup: {
         inline_keyboard: [
           [{ text: "Gratuit", callback_data: "type_gratuit" }],
-          [{ text: "Premium", callback_data: "type_premium" }]
-        ]
-      }
+          [{ text: "Premium", callback_data: "type_premium" }],
+        ],
+      },
     });
   }
 
@@ -278,7 +279,36 @@ bot.on("message", async (msg) => {
       );
     }
 
-    state.mediaUrl = fileId;
+    // --- TRANSFERT AU BOT PRINCIPAL pour obtenir un file_id valide ---
+    let finalFileId = fileId;
+    if (fileId && mediaType && mediaType !== "voice" && mediaType !== "audio") {
+      try {
+        const formData = new URLSearchParams();
+        formData.append("chat_id", MAIN_BOT_ID);
+        formData.append(mediaType === "photo" ? "photo" : mediaType, fileId);
+        formData.append("caption", "Transfert technique");
+
+        const response = await axios.post(
+          `https://api.telegram.org/bot${MAIN_BOT_TOKEN}/send${mediaType === "photo" ? "Photo" : mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}`,
+          formData
+        );
+
+        if (response.data?.ok) {
+          if (mediaType === "photo") {
+            finalFileId = response.data.result.photo.slice(-1)[0].file_id;
+          } else {
+            finalFileId = response.data.result[mediaType].file_id;
+          }
+        }
+      } catch (err) {
+        console.error("Erreur transfert vers bot principal :", err.message);
+        bot.sendMessage(chatId, "⚠️ Impossible de transférer le média au bot principal. Le prono sera enregistré sans média.");
+        finalFileId = null;
+        mediaType = null;
+      }
+    }
+
+    state.mediaUrl = finalFileId;
     state.mediaType = mediaType;
     state.step = "confirming";
 
@@ -289,17 +319,16 @@ bot.on("message", async (msg) => {
 📎 Média : ${mediaType ? mediaType : "aucun"}
 📌 Type : <b>${state.type}</b>
 `;
-
     return bot.sendMessage(chatId, recap, {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
           [
             { text: "✅ Confirmer", callback_data: "confirm_prono" },
-            { text: "❌ Annuler", callback_data: "cancel_prono" }
-          ]
-        ]
-      }
+            { text: "❌ Annuler", callback_data: "cancel_prono" },
+          ],
+        ],
+      },
     });
   }
 });
@@ -322,24 +351,15 @@ bot.on("callback_query", async (query) => {
   // --- Confirmation finale ---
   if (state.step === "confirming") {
     if (query.data === "confirm_prono") {
-      const result = await insertManualCoupon(
-        state.content,
-        state.mediaUrl,
-        state.mediaType,
-        state.date,
-        state.type
-      );
-
-      if (result.success) {
-        await bot.sendMessage(
-          chatId,
-          `✅ Coupon <b>${state.type.toUpperCase()}</b> ajouté pour le ${state.date}`,
-          { parse_mode: "HTML" }
+      try {
+        await pool.query(
+          "INSERT INTO daily_pronos (content, media_type, media_url, date_only, type) VALUES ($1,$2,$3,$4,$5)",
+          [state.content, state.mediaType, state.mediaUrl, state.date, state.type]
         );
-      } else {
-        await bot.sendMessage(chatId, "❌ Erreur lors de l’insertion du prono : " + result.error.message);
+        await bot.sendMessage(chatId, `✅ Coupon <b>${state.type.toUpperCase()}</b> ajouté pour le ${state.date}`, { parse_mode: "HTML" });
+      } catch (err) {
+        await bot.sendMessage(chatId, "❌ Erreur lors de l’insertion du prono : " + err.message);
       }
-
       delete pendingCoupon[chatId];
     }
 
@@ -351,7 +371,6 @@ bot.on("callback_query", async (query) => {
 
   await bot.answerCallbackQuery(query.id);
 });
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////////
