@@ -1,4 +1,3 @@
-// autoSend.js
 const { pool } = require("./db");
 const bot = require("./bot");
 const moment = require("moment-timezone");
@@ -37,7 +36,7 @@ async function loadMessages() {
   cache.lastRefresh = Date.now();
 
   console.log(`📥 ${cache.messagesFR.length} messages FR et ${cache.messagesEN.length} messages EN rechargés.`);
-  if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
 }
 
 async function loadMessagesCanal2() {
@@ -46,20 +45,20 @@ async function loadMessagesCanal2() {
   cache.lastRefresh = Date.now();
 
   console.log(`📥 ${cache.messagesCanal2.length} messages Canal2 rechargés.`);
-  if (bot) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
 }
 
 async function loadMessagesSafe() {
   try { await retry(loadMessages, 3, 3000); } 
   catch (err) { 
     console.error("❌ Échec définitif Canal1 :", err.message); 
-    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal1 : ${err.message}`); 
+    if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal1 : ${err.message}`); 
   }
 
   try { await retry(loadMessagesCanal2, 3, 3000); } 
   catch (err) { 
     console.error("❌ Échec définitif Canal2 :", err.message); 
-    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal2 : ${err.message}`); 
+    if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec définitif Canal2 : ${err.message}`); 
   }
 }
 
@@ -107,7 +106,7 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
     console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur canal ${canalId}`);
   } catch (err) {
     console.error(`❌ Erreur envoi message ${msg.id} canal ${canalId}:`, err.message);
-    if (bot) await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id} canal ${canalId}: ${err.message}`);
+    if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur message ${msg.id} canal ${canalId}: ${err.message}`);
   }
 }
 
@@ -135,18 +134,45 @@ async function sendScheduledMessagesCanal2() {
 // =================== HANDLER GLOBAL ===================
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
-  if (bot) bot.sendMessage(ADMIN_ID, `⚠️ unhandledRejection: ${reason.message || reason}`);
+  if (bot && ADMIN_ID) bot.sendMessage(ADMIN_ID, `⚠️ unhandledRejection: ${reason.message || reason}`);
 });
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
-  if (bot) bot.sendMessage(ADMIN_ID, `⚠️ uncaughtException: ${err.message || err}`);
+  if (bot && ADMIN_ID) bot.sendMessage(ADMIN_ID, `⚠️ uncaughtException: ${err.message || err}`);
 });
 
 // =================== CRON ===================
-(async () => { console.log("⏱️ Chargement initial messages..."); await loadMessagesSafe(); })();
-cron.schedule("45 5 * * *", async () => { console.log("⏱️ Rechargement messages à 05:45..."); await loadMessagesSafe(); }, { timezone: "Africa/Lome" });
-cron.schedule("*/30 * * * *", async () => { console.log("♻️ Refresh auto des messages..."); await loadMessagesSafe(); }, { timezone: "Africa/Lome" });
-cron.schedule("* * * * *", async () => { await sendScheduledMessages(); await sendScheduledMessagesCanal2(); }, { timezone: "Africa/Lome" });
+(async () => { 
+  console.log("⏱️ Chargement initial messages...");
+  await loadMessagesSafe();
+})();
+
+// Reload messages fixes
+cron.schedule("45 5 * * *", async () => { 
+  console.log("⏱️ Rechargement messages à 05:45...");
+  await loadMessagesSafe();
+}, { timezone: "Africa/Lome" });
+
+// Refresh cache auto
+cron.schedule("*/30 * * * *", async () => { 
+  console.log("♻️ Refresh auto des messages...");
+  await loadMessagesSafe();
+}, { timezone: "Africa/Lome" });
+
+// Envoi automatique messages
+cron.schedule("* * * * *", async () => { 
+  await sendScheduledMessages(); 
+  await sendScheduledMessagesCanal2(); 
+}, { timezone: "Africa/Lome" });
+
+// =================== REDÉMARRAGE AUTOMATIQUE ===================
+cron.schedule("0 2 * * *", async () => { // chaque jour à 02:00 UTC
+  console.log("♻️ Redémarrage automatique du bot (autoSend.js)...");
+  if (bot && ADMIN_ID) {
+    await bot.sendMessage(ADMIN_ID, "♻️ Redémarrage automatique du bot (autoSend.js)...");
+  }
+  process.exit(0);
+}, { timezone: "UTC" });
 
 console.log("✅ autoSend.js lancé avec cache + retry + handlers globaux.");
 
