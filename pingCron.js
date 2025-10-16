@@ -1,3 +1,4 @@
+
 // pingCron.js
 const { ping } = require("./pingServer"); // ping interne du Bot2
 const schedule = require("node-schedule");
@@ -12,7 +13,7 @@ function isWithinPingHours() {
 }
 
 // Job cron toutes les 14 minutes pour le ping interne
-schedule.scheduleJob("*/14 * * * *", async () => {
+schedule.scheduleJob("*/10 * * * *", async () => {
   if (!isWithinPingHours()) return;
 
   try {
