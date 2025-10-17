@@ -1,38 +1,46 @@
-
-// pingCron.js
 const { ping } = require("./pingServer"); // ping interne du Bot2
 const schedule = require("node-schedule");
 
-// ---------- 1️⃣ Ping interne à partir de 05:07 ----------
+// =================== 1️⃣ Vérification plage horaire ===================
 function isWithinPingHours() {
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
+
   // Plage 05:07 → 03:30 du lendemain
   return (hours > 5 || (hours === 5 && minutes >= 7)) || (hours < 3 || (hours === 3 && minutes <= 30));
 }
 
-// Job cron toutes les 14 minutes pour le ping interne
-schedule.scheduleJob("*/10 * * * *", async () => {
-  if (!isWithinPingHours()) return;
-
-  try {
-    await ping();
-    console.log(`⏰ Ping interne Bot2 exécuté à ${new Date().toLocaleTimeString()}`);
-  } catch (err) {
-    console.error("❌ Erreur ping interne Bot2 :", err.message);
+// =================== 2️⃣ Ping avec retry ===================
+async function safePing(retries = 3, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await ping();
+      console.log(`⏰ Ping interne Bot2 réussi à ${new Date().toLocaleTimeString()}`);
+      return;
+    } catch (err) {
+      console.warn(`⚠️ Tentative ping ${i + 1} échouée: ${err.message}`);
+      if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      else console.error("❌ Ping interne Bot2 échoué définitivement :", err.message);
+    }
   }
-});
-
-// Ping immédiat si Bot2 démarre entre 05:07 et 03:30
-if (isWithinPingHours()) {
-  ping().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
 }
 
-// ---------- 2️⃣ Redémarrage automatique quotidien ----------
-// 🔁 Chaque jour à 02:00 UTC (Render redémarre le process automatiquement)
+// =================== 3️⃣ Cron ping ===================
+schedule.scheduleJob("*/14 * * * *", async () => {
+  if (!isWithinPingHours()) return;
+  await safePing();
+});
+
+// =================== 4️⃣ Ping immédiat au démarrage ===================
+if (isWithinPingHours()) {
+  safePing().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
+}
+
+// =================== 5️⃣ Redémarrage automatique quotidien ===================
 schedule.scheduleJob("0 2 * * *", () => {
-  console.log("♻️ Redémarrage automatique du bot à 02h00 UTC...");
+  console.log("♻️ Redémarrage automatique du bot à 02:00 UTC...");
   process.exit(0);
 });
 
+console.log("✅ pingCron.js lancé : ping interne + restart quotidien actif");
