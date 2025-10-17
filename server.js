@@ -2,8 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const TelegramBot = require("node-telegram-bot-api");
-const sendFixedMessagesDaily = require("./sendFixedMessagesDaily");
-const sendFixedMessages = require("./sendFixedMessages");
 const { sendManualCoupon, generateAndSendCoupon, cleanOldData } = require("./autoSend");
 
 // ====== CONFIGURATION ENV ======
