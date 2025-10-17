@@ -1,10 +1,15 @@
-const schedule = require("node-schedule");
-const { pool } = require("./db"); 
-const bot = require("./bot"); 
+// =================== autoSender.js ===================
+const cron = require("node-cron");
+const { pool } = require("./db");
+const bot = require("./bot");
 const dayjs = require("dayjs");
 
 const CANAL_ID = process.env.CANAL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
+
+// =================== VARIABLES ===================
+let isRunning = false; // verrou anti chevauchement
+const START_TIME = Date.now();
 
 // =================== RETRY + TIMEOUT ===================
 async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
@@ -17,6 +22,7 @@ async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
     } catch (err) {
       console.warn(`⚠️ Tentative ${i + 1} échouée: ${err.message}`);
       if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, 2000)); // délai entre retries
     }
   }
 }
@@ -48,14 +54,20 @@ async function sendTelegramMessage(msg) {
   }
 }
 
-// =================== CRON : ENVOI MESSAGES ===================
-schedule.scheduleJob("* * * * *", async () => {
+// =================== CRON PRINCIPAL : ENVOI AUTO ===================
+cron.schedule("* * * * *", async () => {
+  if (isRunning) {
+    console.log("⚠️ autoSender déjà en cours, skip...");
+    return;
+  }
+  isRunning = true;
+
   try {
     const { rows } = await pool.query(`
       UPDATE messages_auto
       SET sent = true
       WHERE id IN (
-        SELECT id 
+        SELECT id
         FROM messages_auto
         WHERE sent = false AND send_date <= NOW()
         ORDER BY send_date ASC
@@ -71,7 +83,6 @@ schedule.scheduleJob("* * * * *", async () => {
         console.log(`✅ Message ID ${msg.id} envoyé à ${now.format("HH:mm DD/MM")}`);
       } catch (err) {
         console.error(`❌ Erreur envoi message ID ${msg.id}:`, err.message || err);
-        // Remettre à false pour réessayer plus tard
         await pool.query(`UPDATE messages_auto SET sent = false WHERE id = $1`, [msg.id]);
         if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec message ID ${msg.id}: ${err.message}`);
       }
@@ -79,11 +90,13 @@ schedule.scheduleJob("* * * * *", async () => {
   } catch (err) {
     console.error("❌ Erreur autoSender:", err.message || err);
     if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur autoSender: ${err.message}`);
+  } finally {
+    isRunning = false;
   }
-});
+}, { timezone: "Africa/Lome" });
 
 // =================== CRON : SUPPRESSION ANCIENS MESSAGES ===================
-schedule.scheduleJob("15 2 * * *", async () => { // 02:15 UTC
+cron.schedule("15 2 * * *", async () => { // 02:15 UTC
   try {
     const { rowCount } = await pool.query(`
       DELETE FROM messages_auto 
@@ -94,23 +107,44 @@ schedule.scheduleJob("15 2 * * *", async () => { // 02:15 UTC
     console.error("❌ Erreur suppression anciens messages :", err.message || err);
     if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur suppression anciens messages : ${err.message}`);
   }
-});
+}, { timezone: "UTC" });
 
 // =================== CRON : REDÉMARRAGE AUTOMATIQUE ===================
-schedule.scheduleJob("0 2 * * *", async () => { // 02:00 UTC
-  console.log("♻️ Redémarrage automatique du bot autoSenderPro...");
-  if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, "♻️ Redémarrage automatique du bot autoSenderPro...");
+cron.schedule("0 2 * * *", async () => { // 02:00 UTC
+  console.log("♻️ Redémarrage automatique du bot autoSender...");
+  if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, "♻️ Redémarrage automatique du bot autoSender...");
   process.exit(0);
-});
+}, { timezone: "UTC" });
+
+// =================== RESTART SÉCURITÉ (toutes les 24h) ===================
+setTimeout(() => {
+  console.log("♻️ Restart sécurité après 24h de fonctionnement.");
+  if (ADMIN_ID) bot.sendMessage(ADMIN_ID, "♻️ Restart sécurité (24h écoulées, prévention freeze).");
+  process.exit(0);
+}, 24 * 60 * 60 * 1000);
+
+// =================== HEARTBEAT (preuve de vie) ===================
+setInterval(() => {
+  const uptime = Math.round((Date.now() - START_TIME) / 1000 / 60);
+  console.log(`💓 autoSender actif depuis ${uptime} min (${dayjs().format("HH:mm:ss")})`);
+}, 60000);
 
 // =================== HANDLER GLOBAL ===================
-process.on('unhandledRejection', async (reason) => {
-  console.error('Unhandled Rejection:', reason);
+process.on("unhandledRejection", async (reason) => {
+  console.error("Unhandled Rejection:", reason);
   if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `⚠️ unhandledRejection: ${reason.message || reason}`);
 });
-process.on('uncaughtException', async (err) => {
-  console.error('Uncaught Exception:', err);
+process.on("uncaughtException", async (err) => {
+  console.error("Uncaught Exception:", err);
   if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `⚠️ uncaughtException: ${err.message || err}`);
 });
+process.on("exit", async () => {
+  try {
+    await pool.end();
+    console.log("✅ Pool PostgreSQL fermé proprement.");
+  } catch (err) {
+    console.error("⚠️ Erreur fermeture pool:", err.message);
+  }
+});
 
-console.log("✅ autoSenderPro.js lancé avec retry + timeout + redémarrage quotidien + notifications admin.");
+console.log("✅ autoSender.js lancé avec protections anti-freeze, redémarrages auto, et heartbeat.");
