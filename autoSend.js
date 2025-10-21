@@ -178,26 +178,22 @@ process.on('uncaughtException', (err) => {
   await loadMessagesSafe();
 })();
 
-// 🔄 Rechargement quotidien
+// 🔄 Rechargement quotidien à 05:45 (Africa/Lome)
 cron.schedule("45 5 * * *", async () => {
   console.log("⏱️ Rechargement messages à 05:45...");
-  await loadMessagesSafe();
-}, { timezone: "Africa/Lome" });
-
-// 🔁 Refresh auto toutes les 30 min
-cron.schedule("*/30 * * * *", async () => {
-  console.log("♻️ Refresh auto des messages...");
   await loadMessagesSafe();
 }, { timezone: "Africa/Lome" });
 
 // ⏰ Envoi automatique chaque minute (protégé contre chevauchement)
 let running = false;
 cron.schedule("* * * * *", async () => {
-  if (running) return console.log("⚠️ Envoi encore en cours, skip.");
+  if (running) return;
   running = true;
   try {
-    await sendScheduledMessages();
-    await sendScheduledMessagesCanal2();
+    await Promise.allSettled([
+      sendScheduledMessages(),
+      sendScheduledMessagesCanal2()
+    ]);
   } catch (err) {
     console.error("Erreur envoi auto:", err.message);
   } finally {
@@ -205,25 +201,17 @@ cron.schedule("* * * * *", async () => {
   }
 }, { timezone: "Africa/Lome" });
 
-// ♻️ Redémarrage automatique chaque jour à 02:00 UTC
-cron.schedule("0 2 * * *", async () => {
-  console.log("♻️ Redémarrage automatique du bot (autoSend.js)...");
-  if (bot && ADMIN_ID)
-    await bot.sendMessage(ADMIN_ID, "♻️ Redémarrage automatique du bot (autoSend.js)...");
-  process.exit(0);
-}, { timezone: "UTC" });
-
 // 🔒 Sécurité : redémarrage si uptime > 24h
 setInterval(() => {
   console.log("♻️ Restart de sécurité (24h).");
   process.exit(0);
 }, 24 * 60 * 60 * 1000);
 
-// 💓 Heartbeat : preuve de vie toutes les minutes
+// 💓 Heartbeat : preuve de vie toutes les 5 minutes
 setInterval(() => {
   console.log("💓 autoSend actif:", moment().tz("Africa/Lome").format("HH:mm:ss"));
-}, 60000);
+}, 300000);
 
-console.log("✅ autoSend.js lancé avec protections anti-freeze et sécurité mémoire.");
+console.log("✅ autoSend.js lancé avec protections anti-freeze et performance optimisée.");
 
 module.exports = { loadMessages, sendScheduledMessages };
