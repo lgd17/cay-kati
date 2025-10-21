@@ -58,7 +58,7 @@ async function loadMessages() {
   cache.messagesEN = res.rows.filter(m => m.lang?.toLowerCase() === "en");
   cache.lastRefresh = Date.now();
   console.log(`📥 ${cache.messagesFR.length} FR / ${cache.messagesEN.length} EN rechargés.`);
-  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal1 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Canal1 rechargé à ${moment().tz("Africa/Lome").format("HH:mm")}`);
 }
 
 async function loadMessagesCanal2() {
@@ -66,7 +66,7 @@ async function loadMessagesCanal2() {
   cache.messagesCanal2 = res.rows;
   cache.lastRefresh = Date.now();
   console.log(`📥 ${cache.messagesCanal2.length} messages Canal2 rechargés.`);
-  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Messages Canal2 rechargés à ${moment().tz("Africa/Lome").format("HH:mm")}`);
+  if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `♻️ Canal2 rechargé à ${moment().tz("Africa/Lome").format("HH:mm")}`);
 }
 
 async function loadMessagesSafe() {
@@ -201,17 +201,11 @@ cron.schedule("* * * * *", async () => {
   }
 }, { timezone: "Africa/Lome" });
 
-// 🔒 Sécurité : redémarrage si uptime > 24h
-setInterval(() => {
-  console.log("♻️ Restart de sécurité (24h).");
-  process.exit(0);
-}, 24 * 60 * 60 * 1000);
-
-// 💓 Heartbeat : preuve de vie toutes les 5 minutes
+// 💓 Heartbeat toutes les 5 minutes
 setInterval(() => {
   console.log("💓 autoSend actif:", moment().tz("Africa/Lome").format("HH:mm:ss"));
 }, 300000);
 
-console.log("✅ autoSend.js lancé avec protections anti-freeze et performance optimisée.");
+console.log("✅ autoSend.js (version stable Render) lancé sans restart forcé.");
 
 module.exports = { loadMessages, sendScheduledMessages };
