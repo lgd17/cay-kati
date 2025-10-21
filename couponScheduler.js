@@ -1,4 +1,4 @@
-// autoSender.js (ou couponScheduler.js)
+// ================== IMPORTS ==================
 const { pool } = require("./db");
 const bot = require("./bot");
 const moment = require("moment-timezone");
@@ -9,18 +9,22 @@ const CANAL1_ID = process.env.CANAL_ID;
 const CANAL2_ID = process.env.CANAL2_ID;
 const TIMEZONE = "Africa/Lome";
 
-// ================== ETAT ==================
+// ================== FLAGS ==================
 let isRunning1 = false;
 let isRunning2 = false;
 
-// ================== FONCTION PRINCIPALE ==================
-async function sendCoupons(channelId, tableName, runningFlag) {
-  if (runningFlag.flag) {
-    console.log(`⚠️ Tâche déjà en cours pour ${tableName}, on saute ce cycle.`);
+// ================== FONCTION D'ENVOI ==================
+async function sendCoupons(channelId, tableName, isRunningFlag) {
+  if (isRunningFlag) {
+    console.log(`⚠️ ${tableName} déjà en cours, skip.`);
     return;
   }
 
-  runningFlag.flag = true;
+  if (!channelId) return;
+
+  if (tableName === "scheduled_coupons") isRunning1 = true;
+  if (tableName === "scheduled_coupons_2") isRunning2 = true;
+
   const now = moment().tz(TIMEZONE).format("HH:mm");
 
   try {
@@ -32,80 +36,59 @@ async function sendCoupons(channelId, tableName, runningFlag) {
 
     if (!rows.length) {
       console.log(`🕐 Aucun coupon actif dans ${tableName} à ${now}`);
-      runningFlag.flag = false;
       return;
     }
 
     for (const coupon of rows) {
-      // Envoi uniquement si l'heure correspond EXACTEMENT à l'heure planifiée
       if (coupon.schedule_time === now) {
-        let htmlContent = coupon.content?.trim() || "<i>(Pas de texte)</i>";
-
         try {
-          if (coupon.media_type === "photo" && coupon.media_url) {
-            await bot.sendPhoto(channelId, coupon.media_url, {
-              caption: htmlContent,
-              parse_mode: "HTML",
-            });
-          } else if (coupon.media_type === "video" && coupon.media_url) {
-            await bot.sendVideo(channelId, coupon.media_url, {
-              caption: htmlContent,
-              parse_mode: "HTML",
-            });
-          } else {
-            await bot.sendMessage(channelId, htmlContent, { parse_mode: "HTML" });
-          }
+          const caption = coupon.content?.trim() || "<i>(Pas de texte)</i>";
+          const mediaOpts = { caption, parse_mode: "HTML" };
 
-          console.log(`✅ Coupon envoyé à ${now} sur ${channelId} (ID: ${coupon.id})`);
+          if (coupon.media_type === "photo" && coupon.media_url)
+            await bot.sendPhoto(channelId, coupon.media_url, mediaOpts);
+          else if (coupon.media_type === "video" && coupon.media_url)
+            await bot.sendVideo(channelId, coupon.media_url, mediaOpts);
+          else
+            await bot.sendMessage(channelId, caption, { parse_mode: "HTML" });
 
-          // Marquer comme envoyé
-          await pool.query(
-            `UPDATE ${tableName} SET is_active = false WHERE id = $1`,
-            [coupon.id]
-          );
+          console.log(`✅ Coupon envoyé (${tableName}) ID ${coupon.id} à ${now}`);
+
+          await pool.query(`UPDATE ${tableName} SET is_active = false WHERE id = $1`, [coupon.id]);
         } catch (err) {
-          console.error(`❌ Erreur d'envoi du coupon ID ${coupon.id} (${tableName}):`, err.message);
+          console.error(`❌ Erreur coupon ID ${coupon.id}:`, err.message);
         }
       }
     }
   } catch (err) {
-    console.error(`💥 Erreur SQL pour ${tableName}:`, err.message);
+    console.error(`💥 Erreur SQL (${tableName}):`, err.message);
   } finally {
-    runningFlag.flag = false;
+    if (tableName === "scheduled_coupons") isRunning1 = false;
+    if (tableName === "scheduled_coupons_2") isRunning2 = false;
   }
 }
 
-// ================== CRONS ==================
-
-// --- CANAL 1 ---
+// ================== CRON UNIQUE ==================
 cron.schedule("* * * * *", async () => {
+  console.log("⏱ Vérification des coupons planifiés...");
   try {
-    await sendCoupons(CANAL1_ID, "scheduled_coupons", { flag: isRunning1 });
+    await Promise.all([
+      sendCoupons(CANAL1_ID, "scheduled_coupons", isRunning1),
+      sendCoupons(CANAL2_ID, "scheduled_coupons_2", isRunning2)
+    ]);
   } catch (err) {
-    console.error("❌ Erreur tâche CANAL1:", err.message);
+    console.error("❌ Erreur tâche principale:", err.message);
   }
-  console.log("⏱ Vérification coupons CANAL1...");
-});
+}, { timezone: TIMEZONE });
 
-// --- CANAL 2 ---
-if (CANAL2_ID) {
-  cron.schedule("* * * * *", async () => {
-    try {
-      await sendCoupons(CANAL2_ID, "scheduled_coupons_2", { flag: isRunning2 });
-    } catch (err) {
-      console.error("❌ Erreur tâche CANAL2:", err.message);
-    }
-    console.log("⏱ Vérification coupons CANAL2...");
-  });
-}
-
-// ================== SÉCURITÉ GLOBALE ==================
-process.on("unhandledRejection", (reason, p) => {
+// ================== HANDLERS GLOBAUX ==================
+process.on("unhandledRejection", (reason) => {
   console.error("⚠️ Promesse non gérée:", reason);
 });
-
 process.on("uncaughtException", (err) => {
   console.error("💥 Erreur fatale non interceptée:", err);
 });
+
+console.log("✅ couponScheduler.js prêt (optimisé Render).");
 
 module.exports = { sendCoupons };
