@@ -48,6 +48,11 @@ const fixedAddStates = {};
 const fixedEditStates = {};
 const editStates = {};
 
+// ============================
+// Ping automatique toutes les 14 minutes
+// ============================
+ping(); // ping immédiat au démarrage
+setInterval(ping, 14 * 60 * 1000); // répéter toutes les 14 minutes
 
 
 
