@@ -1761,33 +1761,39 @@ function escapeHtml(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
-
 // --- Commande /addfixedmsg2 ---
 bot.onText(/\/addfixedmsg2/, async (msg) => {
   if (msg.from.id.toString() !== ADMIN_ID) return;
-  const chatId = msg.chat.id;
 
-  addStates2[chatId] = { step: 'awaiting_text' };
+  const chatId = msg.chat.id;
+  addStates2[msg.from.id] = { step: "awaiting_text" };
+
   await bot.sendMessage(chatId, "✏️ Envoie le texte du message pour le Canal2.");
 });
 
-// === Gestion des réponses étape par étape ===
+// --- Gestion des messages ---
 bot.on("message", async (msg) => {
+  const userId = msg.from.id;
+  const state = addStates2[userId];
+  if (!state) return; // <-- Important : ignore si pas dans addfixedmsg2
+  if (msg.text?.startsWith("/")) return; // Ignore les commandes
+
   const chatId = msg.chat.id;
-  const state = addStates2[chatId];
-  if (!state) return;
 
   try {
-    // Étape 1 → Texte
-    if (state.step === 'awaiting_text') {
+    // Étape 1 : Texte
+    if (state.step === "awaiting_text") {
       state.text = msg.text || "";
-      state.step = 'awaiting_media';
-      return bot.sendMessage(chatId, "📎 Envoie le média (photo, vidéo, audio, voice, video_note ou URL) ou tape 'none' si pas de média.");
+      state.step = "awaiting_media";
+      return bot.sendMessage(
+        chatId,
+        "📎 Envoie le média (photo, vidéo, audio, voice, video_note ou URL) ou tape 'none' si pas de média."
+      );
     }
 
-    // Étape 2 → Média
-    if (state.step === 'awaiting_media') {
-      if (msg.text?.toLowerCase() === 'none') {
+    // Étape 2 : Média
+    if (state.step === "awaiting_media") {
+      if (msg.text?.toLowerCase() === "none") {
         state.media_url = null;
         state.media_type = null;
       } else if (msg.photo) {
@@ -1817,53 +1823,84 @@ bot.on("message", async (msg) => {
         state.media_type = null;
       }
 
-      state.step = 'awaiting_hours';
-      return bot.sendMessage(chatId, "⏰ Envoie les heures d'envoi au format HH:MM, séparées par des virgules.\nExemple : 06:00,14:30");
+      state.step = "awaiting_hours";
+      return bot.sendMessage(
+        chatId,
+        "⏰ Envoie les heures d'envoi au format HH:MM, séparées par des virgules.\nExemple : 06:00,14:30"
+      );
     }
 
-    // Étape 3 → Heures
-    if (state.step === 'awaiting_hours') {
+    // Étape 3 : Heures
+    if (state.step === "awaiting_hours") {
       state.heures = msg.text;
-      state.step = 'awaiting_confirmation';
+      state.step = "awaiting_confirmation";
 
-      // Prévisualisation avec boutons de confirmation
+      // Prévisualisation avec confirmation
       await sendPreviewWithConfirmation(chatId, state);
     }
-
   } catch (err) {
     console.error("❌ Erreur /addfixedmsg2 :", err.message);
     await bot.sendMessage(chatId, `❌ Erreur : ${err.message}`);
-    delete addStates2[chatId];
+    delete addStates2[userId];
   }
 });
 
-// === Fonction de prévisualisation avec confirmation ===
+// --- Fonction de prévisualisation corrigée ---
 async function sendPreviewWithConfirmation(chatId, state) {
   const safeText = escapeHtml(state.text);
-  const previewText = `📝 Texte : ${safeText}\n⏰ Heures : ${escapeHtml(state.heures)}\n🎞 Média : ${escapeHtml(state.media_type || "Aucun")}`;
+  const previewText = `📝 Texte : ${safeText}\n⏰ Heures : ${escapeHtml(
+    state.heures
+  )}\n🎞 Média : ${escapeHtml(state.media_type || "Aucun")}`;
 
   try {
+    const captionSafe =
+      previewText.length <= 1000 ? previewText : previewText.slice(0, 1000) + "…";
+
     switch (state.media_type) {
       case "photo":
-        await bot.sendPhoto(chatId, state.media_url, { caption: previewText, parse_mode: "HTML" });
+        await bot.sendPhoto(chatId, state.media_url, {
+          caption: captionSafe,
+          parse_mode: "HTML",
+        });
+        if (previewText.length > 1000)
+          await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         break;
+
       case "video":
-        await bot.sendVideo(chatId, state.media_url, { caption: previewText, parse_mode: "HTML" });
+        await bot.sendVideo(chatId, state.media_url, {
+          caption: captionSafe,
+          parse_mode: "HTML",
+        });
+        if (previewText.length > 1000)
+          await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         break;
+
       case "audio":
-        await bot.sendAudio(chatId, state.media_url, { caption: previewText, parse_mode: "HTML" });
+        await bot.sendAudio(chatId, state.media_url, {
+          caption: captionSafe,
+          parse_mode: "HTML",
+        });
+        if (previewText.length > 1000)
+          await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         break;
+
       case "voice":
         await bot.sendVoice(chatId, state.media_url);
-        if (state.text) await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
+        await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         break;
+
       case "video_note":
         await bot.sendVideoNote(chatId, state.media_url);
-        if (state.text) await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
+        await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         break;
+
       default:
         if (state.media_url?.startsWith("http")) {
-          await bot.sendMessage(chatId, `${previewText}\n🔗 ${escapeHtml(state.media_url)}`, { parse_mode: "HTML" });
+          await bot.sendMessage(
+            chatId,
+            `${previewText}\n🔗 ${escapeHtml(state.media_url)}`,
+            { parse_mode: "HTML" }
+          );
         } else {
           await bot.sendMessage(chatId, previewText, { parse_mode: "HTML" });
         }
@@ -1878,22 +1915,24 @@ async function sendPreviewWithConfirmation(chatId, state) {
           [
             { text: "✅ Confirmer", callback_data: "confirm_fixed2" },
             { text: "❌ Annuler", callback_data: "cancel_fixed2" },
-          ]
-        ]
-      }
+          ],
+        ],
+      },
     });
-
   } catch (err) {
     console.error("❌ Erreur prévisualisation :", err.message);
-    await bot.sendMessage(chatId, `❌ Erreur prévisualisation : ${escapeHtml(err.message)}`);
+    await bot.sendMessage(
+      chatId,
+      `❌ Erreur prévisualisation : ${escapeHtml(err.message)}`
+    );
   }
 }
 
-// === Gestion des callback pour confirmation ===
+// --- Gestion des callback ---
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const data = query.data;
-  const state = addStates2[chatId];
+  const state = addStates2[query.from.id];
   if (!state) return;
 
   if (data === "confirm_fixed2") {
@@ -1902,19 +1941,26 @@ bot.on("callback_query", async (query) => {
         INSERT INTO message_fixes2 (media_text, media_url, media_type, heures)
         VALUES ($1,$2,$3,$4) RETURNING id
       `;
-      const res = await pool.query(insertQuery, [state.text, state.media_url, state.media_type, state.heures]);
-      const newId = res.rows[0].id;
-      await bot.sendMessage(chatId, `✅ Message ajouté pour Canal2 avec ID ${newId}.`);
+      const res = await pool.query(insertQuery, [
+        state.text,
+        state.media_url,
+        state.media_type,
+        state.heures,
+      ]);
+      await bot.sendMessage(
+        chatId,
+        `✅ Message ajouté pour Canal2 avec ID ${res.rows[0].id}.`
+      );
     } catch (err) {
       console.error(err);
       await bot.sendMessage(chatId, "❌ Erreur en base de données.");
     }
-    delete addStates2[chatId];
+    delete addStates2[query.from.id];
     await bot.answerCallbackQuery(query.id);
   }
 
   if (data === "cancel_fixed2") {
-    delete addStates2[chatId];
+    delete addStates2[query.from.id];
     await bot.sendMessage(chatId, "❌ Ajout annulé.");
     await bot.answerCallbackQuery(query.id);
   }
