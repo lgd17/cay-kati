@@ -112,17 +112,24 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
     if (exists.rowCount === 0) return console.warn(`⚠️ Message ${msg.id} inexistant, skip.`);
 
     const text = msg.media_text || "";
+    const file = msg.file_id || msg.media_url; // 🔹 priorité au file_id si dispo
 
     switch (msg.media_type) {
-      case "photo": await withTimeout(bot.sendPhoto(canalId, msg.media_url, { caption: text, parse_mode: "HTML" })); break;
-      case "video": await withTimeout(bot.sendVideo(canalId, msg.media_url, { caption: text, parse_mode: "HTML" })); break;
-      case "audio": await withTimeout(bot.sendAudio(canalId, msg.media_url, { caption: text, parse_mode: "HTML" })); break;
+      case "photo":
+        await withTimeout(bot.sendPhoto(canalId, file, { caption: text, parse_mode: "HTML" }));
+        break;
+      case "video":
+        await withTimeout(bot.sendVideo(canalId, file, { caption: text, parse_mode: "HTML" }));
+        break;
+      case "audio":
+        await withTimeout(bot.sendAudio(canalId, file, { caption: text, parse_mode: "HTML" }));
+        break;
       case "voice":
-        await withTimeout(bot.sendVoice(canalId, msg.media_url));
+        await withTimeout(bot.sendVoice(canalId, file));
         if (text) await withTimeout(bot.sendMessage(canalId, text, { parse_mode: "HTML" }));
         break;
       case "video_note":
-        await withTimeout(bot.sendVideoNote(canalId, msg.media_url));
+        await withTimeout(bot.sendVideoNote(canalId, file));
         if (text) await withTimeout(bot.sendMessage(canalId, text, { parse_mode: "HTML" }));
         break;
       default:
@@ -133,13 +140,19 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
         break;
     }
 
-    await querySafe("INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING", [msg.id]);
-    console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur canal ${canalId}`);
+    // ✅ Log uniquement si message du canal 1
+    if (canalType === "canal1") {
+      await querySafe("INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING", [msg.id]);
+    }
+
+    console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur ${canalType}`);
+
   } catch (err) {
     console.error(`❌ Erreur envoi message ${msg.id}:`, err.message);
     if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Message ${msg.id} échoué: ${err.message}`);
   }
 }
+
 
 // =================== ENVOI AUTO ===================
 async function sendScheduledMessages() {
