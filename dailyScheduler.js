@@ -131,12 +131,8 @@ schedule.scheduleJob("0 0 * * *", async () => {
 });
 
 // =================== 6️⃣ AUTO-RESTART SÉCURISÉ ===================
-schedule.scheduleJob("0 2 * * *", async () => {
-  console.log("♻️ Redémarrage automatique dailyScheduler...");
-  if (ADMIN_ID)
-    await bot.sendMessage(ADMIN_ID, "♻️ Redémarrage automatique dailyScheduler...");
-  setTimeout(() => process.exit(0), 3000); // attend 3s avant restart
-});
+
+
 
 // =================== 7️⃣ LANCEMENT INITIAL ===================
 (async () => {
