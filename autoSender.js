@@ -1,4 +1,4 @@
-// =================== autoSender.js (version stable Render) ===================
+// =================== autoSender.js (version reload-safe) ===================
 const cron = require("node-cron");
 const { pool } = require("./db");
 const bot = require("./bot");
@@ -9,7 +9,7 @@ const ADMIN_ID = process.env.ADMIN_ID;
 
 // =================== VARIABLES ===================
 let isRunning = false;
-const START_TIME = Date.now();
+let cronJobs = [];
 
 // =================== RETRY + TIMEOUT ===================
 async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
@@ -30,7 +30,6 @@ async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
 // =================== FONCTION D’ENVOI ===================
 async function sendTelegramMessage(msg) {
   const options = { parse_mode: "HTML" };
-
   switch (msg.media_type) {
     case "photo":
       await bot.sendPhoto(CANAL_ID, msg.media_url, { caption: msg.contenu, ...options });
@@ -54,85 +53,73 @@ async function sendTelegramMessage(msg) {
   }
 }
 
-// =================== CRON PRINCIPAL : ENVOI AUTO ===================
-cron.schedule("* * * * *", async () => {
-  if (isRunning) {
-    console.log("⚠️ autoSender déjà en cours, skip...");
-    return;
-  }
-  isRunning = true;
+// =================== START AUTO SEND ===================
+function startAutoSend() {
+  console.log("🚀 Lancement startAutoSend...");
 
-  try {
-    const { rows } = await pool.query(`
-      UPDATE messages_auto
-      SET sent = true
-      WHERE id IN (
-        SELECT id
-        FROM messages_auto
-        WHERE sent = false AND send_date <= NOW()
-        ORDER BY send_date ASC
-        FOR UPDATE SKIP LOCKED
-      )
-      RETURNING *;
-    `);
+  // Cron principal
+  cronJobs.push(
+    cron.schedule("* * * * *", async () => {
+      if (isRunning) return console.log("⚠️ autoSender déjà en cours, skip...");
+      isRunning = true;
 
-    const now = dayjs();
-    for (const msg of rows) {
       try {
-        await retryWithTimeout(() => sendTelegramMessage(msg));
-        console.log(`✅ Message ID ${msg.id} envoyé à ${now.format("HH:mm DD/MM")}`);
+        const { rows } = await pool.query(`
+          UPDATE messages_auto
+          SET sent = true
+          WHERE id IN (
+            SELECT id
+            FROM messages_auto
+            WHERE sent = false AND send_date <= NOW()
+            ORDER BY send_date ASC
+            FOR UPDATE SKIP LOCKED
+          )
+          RETURNING *;
+        `);
+
+        const now = dayjs();
+        for (const msg of rows) {
+          try {
+            await retryWithTimeout(() => sendTelegramMessage(msg));
+            console.log(`✅ Message ID ${msg.id} envoyé à ${now.format("HH:mm DD/MM")}`);
+          } catch (err) {
+            console.error(`❌ Erreur envoi message ID ${msg.id}:`, err.message);
+            await pool.query(`UPDATE messages_auto SET sent = false WHERE id = $1`, [msg.id]);
+            if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec message ID ${msg.id}: ${err.message}`);
+          }
+        }
       } catch (err) {
-        console.error(`❌ Erreur envoi message ID ${msg.id}:`, err.message);
-        await pool.query(`UPDATE messages_auto SET sent = false WHERE id = $1`, [msg.id]);
-        if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec message ID ${msg.id}: ${err.message}`);
+        console.error("❌ Erreur autoSender:", err.message);
+        if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur autoSender: ${err.message}`);
+      } finally {
+        isRunning = false;
       }
-    }
-  } catch (err) {
-    console.error("❌ Erreur autoSender:", err.message);
-    if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur autoSender: ${err.message}`);
-  } finally {
-    isRunning = false;
-  }
-}, { timezone: "Africa/Lome" });
+    }, { timezone: "Africa/Lome" })
+  );
 
-// =================== CRON : SUPPRESSION ANCIENS MESSAGES ===================
-cron.schedule("15 2 * * *", async () => { // 02:15 UTC
-  try {
-    const { rowCount } = await pool.query(`
-      DELETE FROM messages_auto 
-      WHERE send_date < NOW() - INTERVAL '3 days'
-    `);
-    console.log(`🗑️ Suppression auto : ${rowCount} anciens messages supprimés.`);
-  } catch (err) {
-    console.error("❌ Erreur suppression anciens messages :", err.message);
-    if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur suppression anciens messages : ${err.message}`);
-  }
-}, { timezone: "UTC" });
+  // Cron suppression anciens messages
+  cronJobs.push(
+    cron.schedule("15 2 * * *", async () => {
+      try {
+        const { rowCount } = await pool.query(`
+          DELETE FROM messages_auto 
+          WHERE send_date < NOW() - INTERVAL '3 days'
+        `);
+        console.log(`🗑️ Suppression auto : ${rowCount} anciens messages supprimés.`);
+      } catch (err) {
+        console.error("❌ Erreur suppression anciens messages :", err.message);
+        if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Erreur suppression anciens messages : ${err.message}`);
+      }
+    }, { timezone: "UTC" })
+  );
 
-// =================== HEARTBEAT (preuve de vie) ===================
-setInterval(() => {
-  const uptime = Math.round((Date.now() - START_TIME) / 1000 / 60);
-  console.log(`💓 autoSender actif depuis ${uptime} min (${dayjs().format("HH:mm:ss")})`);
-}, 300000); // toutes les 5 minutes
+  // Heartbeat
+  const START_TIME = Date.now();
+  setInterval(() => {
+    const uptime = Math.round((Date.now() - START_TIME) / 1000 / 60);
+    console.log(`💓 autoSender actif depuis ${uptime} min (${dayjs().format("HH:mm:ss")})`);
+  }, 300000); // 5 minutes
+}
 
-// =================== HANDLER GLOBAL ===================
-process.on("unhandledRejection", async (reason) => {
-  console.error("⚠️ unhandledRejection:", reason);
-  if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `⚠️ unhandledRejection: ${reason.message || reason}`);
-});
-
-process.on("uncaughtException", async (err) => {
-  console.error("🔥 uncaughtException:", err);
-  if (ADMIN_ID) await bot.sendMessage(ADMIN_ID, `🔥 uncaughtException: ${err.message || err}`);
-});
-
-process.on("exit", async () => {
-  try {
-    await pool.end();
-    console.log("✅ Pool PostgreSQL fermé proprement.");
-  } catch (err) {
-    console.error("⚠️ Erreur fermeture pool:", err.message);
-  }
-});
-
-console.log("🚀 autoSender.js lancé (version optimisée Render, sans redémarrage forcé).");
+// =================== EXPORT ===================
+module.exports = { startAutoSend, sendTelegramMessage };
