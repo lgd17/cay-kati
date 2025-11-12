@@ -14,17 +14,15 @@ let isRunning1 = false;
 let isRunning2 = false;
 
 // ================== FONCTION D'ENVOI ==================
-async function sendCoupons(channelId, tableName, isRunningFlag) {
-  if (isRunningFlag) {
+async function sendCoupons(channelId, tableName, isRunningFlagRef) {
+  if (isRunningFlagRef.value) {
     console.log(`⚠️ ${tableName} déjà en cours, skip.`);
     return;
   }
 
   if (!channelId) return;
 
-  if (tableName === "scheduled_coupons") isRunning1 = true;
-  if (tableName === "scheduled_coupons_2") isRunning2 = true;
-
+  isRunningFlagRef.value = true;
   const now = moment().tz(TIMEZONE).format("HH:mm");
 
   try {
@@ -63,32 +61,39 @@ async function sendCoupons(channelId, tableName, isRunningFlag) {
   } catch (err) {
     console.error(`💥 Erreur SQL (${tableName}):`, err.message);
   } finally {
-    if (tableName === "scheduled_coupons") isRunning1 = false;
-    if (tableName === "scheduled_coupons_2") isRunning2 = false;
+    isRunningFlagRef.value = false;
   }
 }
 
-// ================== CRON UNIQUE ==================
-cron.schedule("* * * * *", async () => {
-  console.log("⏱ Vérification des coupons planifiés...");
-  try {
-    await Promise.all([
-      sendCoupons(CANAL1_ID, "scheduled_coupons", isRunning1),
-      sendCoupons(CANAL2_ID, "scheduled_coupons_2", isRunning2)
-    ]);
-  } catch (err) {
-    console.error("❌ Erreur tâche principale:", err.message);
-  }
-}, { timezone: TIMEZONE });
+// ================== FONCTION PRINCIPALE EXPORTABLE ==================
+function startCouponScheduler() {
+  console.log("🚀 Démarrage couponScheduler...");
+
+  const flag1 = { value: isRunning1 };
+  const flag2 = { value: isRunning2 };
+
+  cron.schedule("* * * * *", async () => {
+    try {
+      await Promise.all([
+        sendCoupons(CANAL1_ID, "scheduled_coupons", flag1),
+        sendCoupons(CANAL2_ID, "scheduled_coupons_2", flag2)
+      ]);
+    } catch (err) {
+      console.error("❌ Erreur tâche principale:", err.message);
+    }
+  }, { timezone: TIMEZONE });
+}
 
 // ================== HANDLERS GLOBAUX ==================
 process.on("unhandledRejection", (reason) => {
   console.error("⚠️ Promesse non gérée:", reason);
 });
+
 process.on("uncaughtException", (err) => {
   console.error("💥 Erreur fatale non interceptée:", err);
 });
 
 console.log("✅ couponScheduler.js prêt (optimisé Render).");
 
-module.exports = { sendCoupons };
+// ================== EXPORT ==================
+module.exports = { sendCoupons, startCouponScheduler };
