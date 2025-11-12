@@ -10,18 +10,9 @@ dayjs.extend(utc);
 dayjs.extend(tz);
 dayjs.tz.setDefault("Africa/Lome");
 
+const CANAL1_ID = process.env.CANAL_ID;
+const CANAL2_ID = process.env.CANAL2_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
-
-async function startDailyCoupons() {
-  const CANAL1_ID = process.env.CANAL_ID;
-  const CANAL2_ID = process.env.CANAL2_ID;
-
-  console.log("🚀 Démarrage dailyScheduler via startDailyCoupons...");
-
-  // Relance de la planification des messages pour les deux canaux
-  await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
-  await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
-}
 
 // =================== 1️⃣ RETRY + TIMEOUT ===================
 async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
@@ -36,7 +27,7 @@ async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
     } catch (err) {
       console.warn(`⚠️ Tentative ${i + 1}/${retries} échouée: ${err.message}`);
       if (i === retries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 1500)); // pause avant retry
+      await new Promise((r) => setTimeout(r, 1500));
     }
   }
 }
@@ -85,7 +76,7 @@ async function sendTelegramMessage(canal, msg, canalKey) {
   }
 }
 
-// =================== 3️⃣ RÉCUPÉRATION ===================
+// =================== 3️⃣ RÉCUPÉRATION MESSAGES ===================
 async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
   try {
     const { rows } = await pool.query(
@@ -116,8 +107,7 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
       return;
     }
 
-    const hours = [8, 20]; // Envoi matin & soir
-
+    const hours = [8, 20]; // matin & soir
     messages.forEach((msg, index) => {
       const sendHour = hours[index] || 20;
       const sendTime = dayjs().hour(sendHour).minute(0).second(0);
@@ -132,25 +122,21 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
   }
 }
 
-// =================== 5️⃣ TÂCHE DE REPLANIFICATION ===================
+// =================== 5️⃣ REPLANIFICATION QUOTIDIENNE ===================
 schedule.scheduleJob("0 0 * * *", async () => {
   console.log("🔄 Nouvelle journée : reprogrammation des messages");
   await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
   await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
 });
 
-// =================== 6️⃣ AUTO-RESTART SÉCURISÉ ===================
-
-
-
-// =================== 7️⃣ LANCEMENT INITIAL ===================
-(async () => {
-  console.log("🚀 Lancement initial des tâches journalières...");
+// =================== 6️⃣ FONCTION PRINCIPALE EXPORTABLE ===================
+async function startDailyCoupons() {
+  console.log("🚀 Lancement dailyScheduler via startDailyCoupons...");
   await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
   await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
-})();
+}
 
-// =================== 8️⃣ HANDLERS GLOBAUX ===================
+// =================== 7️⃣ HANDLERS GLOBAUX ===================
 process.on("unhandledRejection", async (reason) => {
   console.error("⚠️ Unhandled Rejection:", reason);
   if (ADMIN_ID)
@@ -166,9 +152,15 @@ process.on("uncaughtException", async (err) => {
     await bot.sendMessage(ADMIN_ID, `💥 uncaughtException: ${err.message}`);
 });
 
+// =================== 8️⃣ LANCEMENT INITIAL ===================
+(async () => {
+  console.log("🚀 Lancement initial des tâches journalières...");
+  await startDailyCoupons();
+})();
+
 console.log("✅ dailyScheduler.js prêt (retry + restart + sécurité totale)");
 
+// =================== 9️⃣ EXPORT ===================
 module.exports = {
   startDailyCoupons
 };
-
