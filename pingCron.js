@@ -1,5 +1,9 @@
 const path = require("path");
 const schedule = require("node-schedule");
+const moment = require("moment-timezone");
+
+// =================== ENV ===================
+const ADMIN_ID = process.env.ADMIN_ID;
 
 // =================== 1️⃣ Vérification plage horaire ===================
 function isWithinPingHours() {
@@ -61,25 +65,30 @@ schedule.scheduleJob("*/14 * * * *", async () => {
 });
 
 // =================== 5️⃣ Redémarrage interne quotidien ===================
+// =================== RELOAD DYNAMIQUE ===================
 async function reloadAllModules() {
   console.log("🔄 Redémarrage interne des modules...");
 
-  ({ ping } = reloadModule(path.join(__dirname, "pingServer.js")) || { ping });
-  autoSend = reloadModule(path.join(__dirname, "autoSend.js")) || autoSend;
-  autoSender = reloadModule(path.join(__dirname, "autoSender.js")) || autoSender;
-  dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js")) || dailyScheduler;
-  couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js")) || couponScheduler;
-
   try {
-    if (ping) await ping();
-    if (autoSend?.startAutoSend) await autoSend.startAutoSend();
-    if (autoSender?.startAutoSender) await autoSender.startAutoSender();
-    if (dailyScheduler?.startDailyCoupons) await dailyScheduler.startDailyCoupons();
-    if (couponScheduler?.startCouponScheduler) await couponScheduler.startCouponScheduler();
+    ({ ping } = reloadModule(path.join(__dirname, "pingServer.js")) || { ping });
+    autoSend = reloadModule(path.join(__dirname, "autoSend.js")) || autoSend;
+    autoSender = reloadModule(path.join(__dirname, "autoSender.js")) || autoSender;
+    dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js")) || dailyScheduler;
+    couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js")) || couponScheduler;
 
-    console.log("✅ Tous les modules rechargés avec succès !");
+    // Relance des modules si fonctions exportées disponibles
+    if (ping) await ping();
+    if (autoSend?.loadMessagesSafe) await autoSend.loadMessagesSafe();
+    if (autoSend?.sendScheduledMessages) await autoSend.sendScheduledMessages();
+    if (autoSend?.sendScheduledMessagesCanal2) await autoSend.sendScheduledMessagesCanal2();
+    if (autoSender?.startAutoSender) await autoSender.startAutoSender?.();
+    if (dailyScheduler?.startDailyCoupons) await dailyScheduler.startDailyCoupons?.();
+    if (couponScheduler?.startCouponScheduler) await couponScheduler.startCouponScheduler?.();
+
+    console.log("✅ Tous les modules rechargés et relancés avec succès !");
   } catch (err) {
-    console.error("❌ Erreur lors du redémarrage interne :", err.message);
+    console.error("❌ Erreur reload global :", err.message);
+    if (ADMIN_ID) await safeSendAdmin(`❌ Erreur reload global : ${err.message}`);
   }
 }
 
@@ -87,6 +96,16 @@ async function reloadAllModules() {
 schedule.scheduleJob("00 2 * * *", async () => {
   await reloadAllModules();
 });
+
+// =================== ENVOI ADMIN ===================
+async function safeSendAdmin(msg) {
+  try {
+    if (ADMIN_ID && bot) await bot.sendMessage(ADMIN_ID, msg);
+  } catch (err) {
+    console.error("❌ Impossible d'envoyer message Admin:", err.message);
+  }
+}
+
 
 // =================== 6️⃣ Watchdog (auto-détection freeze) ===================
 setInterval(() => {
@@ -105,3 +124,5 @@ if (isWithinPingHours()) {
 
 
 console.log("✅ pingCron.js lancé : ping interne + restart quotidien actif");
+
+module.exports = { reloadAllModules, safePing };
