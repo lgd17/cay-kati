@@ -10,9 +10,18 @@ dayjs.extend(utc);
 dayjs.extend(tz);
 dayjs.tz.setDefault("Africa/Lome");
 
-const CANAL1_ID = process.env.CANAL_ID;
-const CANAL2_ID = process.env.CANAL2_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
+
+async function startDailyCoupons() {
+  const CANAL1_ID = process.env.CANAL_ID;
+  const CANAL2_ID = process.env.CANAL2_ID;
+
+  console.log("🚀 Démarrage dailyScheduler via startDailyCoupons...");
+
+  // Relance de la planification des messages pour les deux canaux
+  await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
+  await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
+}
 
 // =================== 1️⃣ RETRY + TIMEOUT ===================
 async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
@@ -158,3 +167,8 @@ process.on("uncaughtException", async (err) => {
 });
 
 console.log("✅ dailyScheduler.js prêt (retry + restart + sécurité totale)");
+
+module.exports = {
+  startDailyCoupons
+};
+
