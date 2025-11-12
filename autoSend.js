@@ -221,4 +221,10 @@ setInterval(() => {
 
 console.log("✅ autoSend.js (version stable Render) lancé sans restart forcé.");
 
-module.exports = { loadMessages, sendScheduledMessages };
+module.exports = {
+  loadMessagesSafe,             // reload des messages FR + EN + Canal2
+  sendScheduledMessages,        // envoi auto Canal1
+  sendScheduledMessagesCanal2,  // envoi auto Canal2
+  sendMessage                   // envoi ponctuel
+};
+
