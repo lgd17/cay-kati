@@ -17,7 +17,9 @@ let cache = {
   lastRefresh: null
 };
 
-// =================== UTILITAIRE : requête DB sécurisée ===================
+// =================== UTILITAIRES ===================
+
+// requête SQL sécurisée
 async function querySafe(sql, params = []) {
   const client = await pool.connect();
   try {
@@ -30,12 +32,11 @@ async function querySafe(sql, params = []) {
   }
 }
 
-// =================== RETRY ===================
+// retry automatique
 async function retry(fn, retries = 3, delay = 2000) {
   for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
+    try { return await fn(); }
+    catch (err) {
       console.warn(`⚠️ Tentative ${i + 1} échouée: ${err.message}`);
       if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
       else throw err;
@@ -43,7 +44,7 @@ async function retry(fn, retries = 3, delay = 2000) {
   }
 }
 
-// =================== TIMEOUT UTILITAIRE ===================
+// timeout pour les requêtes Telegram
 async function withTimeout(promise, ms = 15000) {
   return Promise.race([
     promise,
@@ -75,7 +76,6 @@ async function loadMessagesSafe() {
     console.error("❌ Échec Canal1 :", err.message); 
     if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Échec Canal1 : ${err.message}`); 
   }
-
   try { await retry(loadMessagesCanal2, 3, 3000); } 
   catch (err) { 
     console.error("❌ Échec Canal2 :", err.message); 
@@ -89,18 +89,15 @@ async function getDailyMessages(langMessages, type) {
   const res = await querySafe("SELECT last_index FROM daily_rotation WHERE lang = $1", [type]);
   let lastIndex = res.rowCount > 0 ? parseInt(res.rows[0].last_index, 10) : 0;
   const daily = [];
-
   for (let i = 0; i < 5; i++) {
     const index = (lastIndex + i + 1) % langMessages.length;
     daily.push(langMessages[index]);
   }
-
   const newIndex = (lastIndex + 5) % langMessages.length;
   if (res.rowCount > 0)
     await querySafe("UPDATE daily_rotation SET last_index = $1 WHERE lang = $2", [newIndex, type]);
   else
     await querySafe("INSERT INTO daily_rotation (lang, last_index) VALUES ($1, $2)", [type, newIndex]);
-
   return daily;
 }
 
@@ -112,7 +109,7 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
     if (exists.rowCount === 0) return console.warn(`⚠️ Message ${msg.id} inexistant, skip.`);
 
     const text = msg.media_text || "";
-    const file = msg.file_id || msg.media_url; // 🔹 priorité au file_id si dispo
+    const file = msg.file_id || msg.media_url;
 
     switch (msg.media_type) {
       case "photo":
@@ -140,19 +137,33 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
         break;
     }
 
-    // ✅ Log uniquement si message du canal 1
     if (canalType === "canal1") {
       await querySafe("INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING", [msg.id]);
     }
 
     console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur ${canalType}`);
 
+    // pause pour éviter les 429
+    await new Promise(r => setTimeout(r, 1200));
   } catch (err) {
     console.error(`❌ Erreur envoi message ${msg.id}:`, err.message);
     if (bot && ADMIN_ID) await bot.sendMessage(ADMIN_ID, `❌ Message ${msg.id} échoué: ${err.message}`);
   }
 }
 
+// =================== VERROU GLOBAL ===================
+async function acquireLock(jobName, lockSeconds = 50) {
+  await querySafe(`CREATE TABLE IF NOT EXISTS job_locks (job_name TEXT PRIMARY KEY, locked_at TIMESTAMP DEFAULT NOW())`);
+  const res = await querySafe(`
+    INSERT INTO job_locks(job_name, locked_at)
+    VALUES ($1, NOW())
+    ON CONFLICT (job_name) DO UPDATE
+      SET locked_at = job_locks.locked_at
+    RETURNING extract(epoch from (NOW() - locked_at)) AS diff
+  `, [jobName]);
+  const diff = res.rows[0]?.diff || 999;
+  return diff >= lockSeconds; // true si on peut exécuter
+}
 
 // =================== ENVOI AUTO ===================
 async function sendScheduledMessages() {
@@ -162,7 +173,10 @@ async function sendScheduledMessages() {
   const dailyMessages = [...dailyFR, ...dailyEN];
 
   for (const msg of dailyMessages.filter(m => m?.heures?.split(",").map(h => h.trim()).includes(currentTime))) {
-    const sentCheck = await querySafe("SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", [msg.id]);
+    const sentCheck = await querySafe(
+      "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", 
+      [msg.id]
+    );
     if (sentCheck.rowCount === 0) await retry(() => sendMessage(msg, CANAL_ID, "canal1"), 3, 2000);
   }
 }
@@ -170,7 +184,10 @@ async function sendScheduledMessages() {
 async function sendScheduledMessagesCanal2() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
   for (const msg of cache.messagesCanal2.filter(m => m?.heures?.split(",").map(h => h.trim()).includes(currentTime))) {
-    const sentCheck = await querySafe("SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", [msg.id]);
+    const sentCheck = await querySafe(
+      "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", 
+      [msg.id]
+    );
     if (sentCheck.rowCount === 0) await retry(() => sendMessage(msg, CANAL2_ID, "canal2"), 3, 2000);
   }
 }
@@ -186,45 +203,34 @@ process.on('uncaughtException', (err) => {
 });
 
 // =================== CRON ===================
-(async () => {
-  console.log("⏱️ Chargement initial messages...");
-  await loadMessagesSafe();
-})();
 
-// 🔄 Rechargement quotidien à 05:45 (Africa/Lome)
-cron.schedule("45 5 * * *", async () => {
-  console.log("⏱️ Rechargement messages à 05:45...");
-  await loadMessagesSafe();
-}, { timezone: "Africa/Lome" });
+// Chargement initial
+(async () => { console.log("⏱️ Chargement initial messages..."); await loadMessagesSafe(); })();
 
-// ⏰ Envoi automatique chaque minute (protégé contre chevauchement)
-let running = false;
+// Rechargement quotidien à 05:45
+cron.schedule("45 5 * * *", async () => { console.log("⏱️ Rechargement messages à 05:45..."); await loadMessagesSafe(); }, { timezone: "Africa/Lome" });
+
+// Envoi automatique chaque minute avec verrou global
 cron.schedule("* * * * *", async () => {
-  if (running) return;
-  running = true;
   try {
-    await Promise.allSettled([
-      sendScheduledMessages(),
-      sendScheduledMessagesCanal2()
-    ]);
+    const canRun = await acquireLock("autoSend");
+    if (!canRun) return;
+    await Promise.allSettled([sendScheduledMessages(), sendScheduledMessagesCanal2()]);
   } catch (err) {
     console.error("Erreur envoi auto:", err.message);
-  } finally {
-    running = false;
   }
 }, { timezone: "Africa/Lome" });
 
-// 💓 Heartbeat toutes les 5 minutes
+// Heartbeat toutes les 5 minutes
 setInterval(() => {
   console.log("💓 autoSend actif:", moment().tz("Africa/Lome").format("HH:mm:ss"));
 }, 300000);
 
-console.log("✅ autoSend.js (version stable Render) lancé sans restart forcé.");
+console.log("✅ autoSend.js corrigé lancé.");
 
 module.exports = {
-  loadMessagesSafe,             // reload des messages FR + EN + Canal2
-  sendScheduledMessages,        // envoi auto Canal1
-  sendScheduledMessagesCanal2,  // envoi auto Canal2
-  sendMessage                   // envoi ponctuel
+  loadMessagesSafe,
+  sendScheduledMessages,
+  sendScheduledMessagesCanal2,
+  sendMessage
 };
-
