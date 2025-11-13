@@ -82,11 +82,13 @@ async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
     const { rows } = await pool.query(
       `SELECT * FROM ${tableName}
         WHERE day_of_week = $1
-        AND id NOT IN (
-          SELECT message_id FROM messages_envoyes
-          WHERE canal = $2 AND sent_date >= CURRENT_DATE - INTERVAL '7 days'
-        )
-        ORDER BY RANDOM() LIMIT 2`,
+          AND id NOT IN (
+            SELECT message_id
+            FROM messages_envoyes
+            WHERE canal = $2 AND sent_date >= CURRENT_DATE
+          )
+        ORDER BY RANDOM()
+        LIMIT 2;`,
       [dayOfWeek, canalKey]
     );
     return rows;
@@ -108,7 +110,9 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
     }
 
     const hours = [8, 20]; // matin & soir
-    messages.forEach((msg, index) => {
+    const messagesToSend = messages.slice(0, 2); // sécurité supplémentaire
+
+    messagesToSend.forEach((msg, index) => {
       const sendHour = hours[index] || 20;
       const sendTime = dayjs().hour(sendHour).minute(0).second(0);
 
