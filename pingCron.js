@@ -114,7 +114,7 @@ setInterval(() => {
     console.warn("🚨 Watchdog détecte freeze ! Redémarrage interne en cours...");
     reloadAllModules();
   }
-}, 10 * 60 * 1000); // Vérifie toutes les 10 minutes
+}, 15 * 60 * 1000); // Vérifie toutes les 10 minutes
 
 
 // =================== 4️⃣ Ping immédiat au démarrage ===================
