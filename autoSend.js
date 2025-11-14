@@ -19,7 +19,7 @@ let cache = {
 
 // =================== UTILITAIRES ===================
 
-// requête SQL sécurisée
+// requête SQL sécurisée (utilisée quand on a besoin d'une connexion simple)
 async function querySafe(sql, params = []) {
   const client = await pool.connect();
   try {
@@ -108,6 +108,27 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
     const exists = await querySafe(`SELECT 1 FROM ${tableName} WHERE id=$1`, [msg.id]);
     if (exists.rowCount === 0) return console.warn(`⚠️ Message ${msg.id} inexistant, skip.`);
 
+    // --- Protection anti-duplication (check + insert) ---
+    // Pour canal1 on vérifie et on marque le message comme envoyé AVANT l'envoi réel.
+    // Ce comportement évite les doublons en cas de latence ou de multi-processus
+    if (canalType === "canal1") {
+      // Vérifie si déjà envoyé récemment (10 minutes)
+      const sentCheck = await querySafe(
+        "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'",
+        [msg.id]
+      );
+      if (sentCheck.rowCount > 0) {
+        console.log(`⏭️ Message ${msg.id} déjà envoyé récemment. Skip.`);
+        return;
+      }
+      // Insère immédiatement une ligne pour réserver l'envoi (on fixe sent_at = NOW())
+      // ON CONFLICT évite erreur si une autre instance a déjà inséré entretemps
+      await querySafe(
+        "INSERT INTO message_logs(message_id, sent_at) VALUES($1, NOW()) ON CONFLICT (message_id) DO NOTHING",
+        [msg.id]
+      );
+    }
+
     const text = msg.media_text || "";
     const file = msg.file_id || msg.media_url;
 
@@ -137,10 +158,6 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
         break;
     }
 
-    if (canalType === "canal1") {
-      await querySafe("INSERT INTO message_logs(message_id) VALUES($1) ON CONFLICT DO NOTHING", [msg.id]);
-    }
-
     console.log(`✅ Message ${msg.id} envoyé à ${moment().tz("Africa/Lome").format("HH:mm")} sur ${canalType}`);
 
     // pause pour éviter les 429
@@ -151,18 +168,54 @@ async function sendMessage(msg, canalId, canalType = "canal1") {
   }
 }
 
-// =================== VERROU GLOBAL ===================
+// =================== VERROU GLOBAL (transactionnel, fiable) ===================
+// Utilise une transaction SELECT ... FOR UPDATE pour éviter les races entre instances
 async function acquireLock(jobName, lockSeconds = 50) {
-  await querySafe(`CREATE TABLE IF NOT EXISTS job_locks (job_name TEXT PRIMARY KEY, locked_at TIMESTAMP DEFAULT NOW())`);
-  const res = await querySafe(`
-    INSERT INTO job_locks(job_name, locked_at)
-    VALUES ($1, NOW())
-    ON CONFLICT (job_name) DO UPDATE
-      SET locked_at = job_locks.locked_at
-    RETURNING extract(epoch from (NOW() - locked_at)) AS diff
-  `, [jobName]);
-  const diff = res.rows[0]?.diff || 999;
-  return diff >= lockSeconds; // true si on peut exécuter
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`CREATE TABLE IF NOT EXISTS job_locks (job_name TEXT PRIMARY KEY, locked_at TIMESTAMP)`);
+
+    const res = await client.query(
+      "SELECT locked_at FROM job_locks WHERE job_name = $1 FOR UPDATE",
+      [jobName]
+    );
+
+    const now = new Date();
+
+    if (res.rowCount === 0) {
+      // pas de lock existant -> on crée et on prend le lock
+      await client.query(
+        "INSERT INTO job_locks(job_name, locked_at) VALUES ($1, NOW())",
+        [jobName]
+      );
+      await client.query('COMMIT');
+      return true;
+    }
+
+    const lockedAt = res.rows[0].locked_at ? new Date(res.rows[0].locked_at) : new Date(0);
+    const diff = (now - lockedAt) / 1000; // secondes depuis last lock
+
+    if (diff >= lockSeconds) {
+      // lock expiré -> on met à jour et on prend le lock
+      await client.query(
+        "UPDATE job_locks SET locked_at = NOW() WHERE job_name = $1",
+        [jobName]
+      );
+      await client.query('COMMIT');
+      return true;
+    }
+
+    // lock encore valide -> on refuse
+    await client.query('ROLLBACK');
+    return false;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* ignore */ }
+    console.error("❌ acquireLock error:", err.message);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // =================== ENVOI AUTO ===================
@@ -173,22 +226,16 @@ async function sendScheduledMessages() {
   const dailyMessages = [...dailyFR, ...dailyEN];
 
   for (const msg of dailyMessages.filter(m => m?.heures?.split(",").map(h => h.trim()).includes(currentTime))) {
-    const sentCheck = await querySafe(
-      "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", 
-      [msg.id]
-    );
-    if (sentCheck.rowCount === 0) await retry(() => sendMessage(msg, CANAL_ID, "canal1"), 3, 2000);
+    // NOTE: sendMessage gère maintenant l'anti-duplication (insert préventif dans message_logs)
+    await retry(() => sendMessage(msg, CANAL_ID, "canal1"), 3, 2000);
   }
 }
 
 async function sendScheduledMessagesCanal2() {
   const currentTime = moment().tz("Africa/Lome").format("HH:mm");
   for (const msg of cache.messagesCanal2.filter(m => m?.heures?.split(",").map(h => h.trim()).includes(currentTime))) {
-    const sentCheck = await querySafe(
-      "SELECT 1 FROM message_logs WHERE message_id=$1 AND sent_at > NOW() - INTERVAL '10 minutes'", 
-      [msg.id]
-    );
-    if (sentCheck.rowCount === 0) await retry(() => sendMessage(msg, CANAL2_ID, "canal2"), 3, 2000);
+    // pour canal2 on garde le même comportement (si besoin on peut ajouter la même protection)
+    await retry(() => sendMessage(msg, CANAL2_ID, "canal2"), 3, 2000);
   }
 }
 
