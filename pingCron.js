@@ -5,6 +5,10 @@ const moment = require("moment-timezone");
 // =================== ENV ===================
 const ADMIN_ID = process.env.ADMIN_ID;
 
+// =================== FLAGS ===================
+let lastPing = Date.now();
+let reloadInProgress = false;
+
 // =================== 1️⃣ Vérification plage horaire ===================
 function isWithinPingHours() {
   const now = new Date();
@@ -23,6 +27,7 @@ async function safePing(retries = 3, delay = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
       await ping();
+      lastPing = Date.now(); // ← Mise à jour du ping pour watchdog
       console.log(`⏰ Ping interne Bot2 réussi à ${new Date().toLocaleTimeString()}`);
       return;
     } catch (err) {
@@ -33,7 +38,7 @@ async function safePing(retries = 3, delay = 2000) {
   }
 }
 
-// =================== 2️⃣ Rechargement modules ===================
+// =================== 3️⃣ Rechargement modules ===================
 function reloadModule(modulePath) {
   try {
     delete require.cache[require.resolve(modulePath)];
@@ -51,11 +56,7 @@ let autoSender = reloadModule(path.join(__dirname, "autoSender.js"));
 let dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js"));
 let couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js"));
 
-// Timestamp du dernier ping réussi
-let lastPing = Date.now();
-
-
-// =================== 3️⃣ Cron ping ===================
+// =================== 4️⃣ Cron ping ===================
 schedule.scheduleJob("*/14 * * * *", async () => {
   if (!isWithinPingHours()) {
     console.log(`🕒 Pause ping (${new Date().toLocaleTimeString()})`);
@@ -64,40 +65,39 @@ schedule.scheduleJob("*/14 * * * *", async () => {
   await safePing();
 });
 
-// =================== 5️⃣ Redémarrage interne quotidien ===================
-// =================== RELOAD DYNAMIQUE ===================
+// =================== 5️⃣ Reload modules critique (sans relance des fonctions) ===================
 async function reloadAllModules() {
+  if (reloadInProgress) {
+    console.log("🔒 Reload déjà en cours, passage...");
+    return;
+  }
+
+  reloadInProgress = true;
   console.log("🔄 Redémarrage interne des modules...");
 
   try {
+    // Reload seulement les modules critiques
     ({ ping } = reloadModule(path.join(__dirname, "pingServer.js")) || { ping });
     autoSend = reloadModule(path.join(__dirname, "autoSend.js")) || autoSend;
     autoSender = reloadModule(path.join(__dirname, "autoSender.js")) || autoSender;
     dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js")) || dailyScheduler;
     couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js")) || couponScheduler;
 
-    // Relance des modules si fonctions exportées disponibles
-    if (ping) await ping();
-    if (autoSend?.loadMessagesSafe) await autoSend.loadMessagesSafe();
-    if (autoSend?.sendScheduledMessages) await autoSend.sendScheduledMessages();
-    if (autoSend?.sendScheduledMessagesCanal2) await autoSend.sendScheduledMessagesCanal2();
-    if (autoSender?.startAutoSender) await autoSender.startAutoSender?.();
-    if (dailyScheduler?.startDailyCoupons) await dailyScheduler.startDailyCoupons?.();
-    if (couponScheduler?.startCouponScheduler) await couponScheduler.startCouponScheduler?.();
-
-    console.log("✅ Tous les modules rechargés et relancés avec succès !");
+    console.log("✅ Modules rechargés (fonctions non relancées) !");
   } catch (err) {
     console.error("❌ Erreur reload global :", err.message);
     if (ADMIN_ID) await safeSendAdmin(`❌ Erreur reload global : ${err.message}`);
+  } finally {
+    reloadInProgress = false;
   }
 }
 
-// Redémarrage interne quotidien à 02:00 UTC
+// =================== 6️⃣ Redémarrage interne quotidien ===================
 schedule.scheduleJob("00 2 * * *", async () => {
   await reloadAllModules();
 });
 
-// =================== ENVOI ADMIN ===================
+// =================== 7️⃣ Envoi Admin ===================
 async function safeSendAdmin(msg) {
   try {
     if (ADMIN_ID && bot) await bot.sendMessage(ADMIN_ID, msg);
@@ -106,22 +106,19 @@ async function safeSendAdmin(msg) {
   }
 }
 
-
-// =================== 6️⃣ Watchdog (auto-détection freeze) ===================
+// =================== 8️⃣ Watchdog (auto-détection freeze) ===================
 setInterval(() => {
   const minutesSinceLastPing = (Date.now() - lastPing) / 60000;
   if (minutesSinceLastPing > 60) { // plus d'1h sans ping
-    console.warn("🚨 Watchdog détecte freeze ! Redémarrage interne en cours...");
-    reloadAllModules();
+    console.warn("🚨 Watchdog détecte freeze !");
+    reloadAllModules(); // reload sécurisé grâce au flag
   }
-}, 15 * 60 * 1000); // Vérifie toutes les 10 minutes
+}, 15 * 60 * 1000); // toutes les 15 minutes
 
-
-// =================== 4️⃣ Ping immédiat au démarrage ===================
+// =================== 9️⃣ Ping immédiat au démarrage ===================
 if (isWithinPingHours()) {
   safePing().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
 }
-
 
 console.log("✅ pingCron.js lancé : ping interne + restart quotidien actif");
 
