@@ -1,6 +1,7 @@
 const path = require("path");
 const schedule = require("node-schedule");
 const moment = require("moment-timezone");
+const { ping } = require("./pingServer");
 
 // =================== ENV ===================
 const ADMIN_ID = process.env.ADMIN_ID;
