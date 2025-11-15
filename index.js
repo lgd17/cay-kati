@@ -51,14 +51,11 @@ const editStates = {};
 // ============================
 // Ping automatique toutes les 13 minutes
 // ============================
-schedule.scheduleJob("*/13 * * * *", async () => { // 🔹 Ping toutes les 13 min
-  if (!isWithinPingHours() || isPause) {
-    console.log(`🕒 Pause ping (${new Date().toLocaleTimeString()})`);
-    return;
-  }
-  await safePing();
-});
+const { safePing } = require("./pingCron");
 
+schedule.scheduleJob("*/13 * * * *", async () => {
+  await safePing(); // safePing gère déjà isPause et isWithinPingHours
+});
 
 
 
