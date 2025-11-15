@@ -51,7 +51,7 @@ const editStates = {};
 // ============================
 // Ping automatique toutes les 13 minutes
 // ============================
-consschedule.scheduleJob("*/13 * * * *", async () => { // 🔹 Ping toutes les 13 min
+schedule.scheduleJob("*/13 * * * *", async () => { // 🔹 Ping toutes les 13 min
   if (!isWithinPingHours() || isPause) {
     console.log(`🕒 Pause ping (${new Date().toLocaleTimeString()})`);
     return;
