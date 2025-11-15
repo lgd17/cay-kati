@@ -14,28 +14,18 @@ const CANAL1_ID = process.env.CANAL_ID;
 const CANAL2_ID = process.env.CANAL2_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
-// =================== 1️⃣ RETRY + TIMEOUT ===================
-async function retryWithTimeout(fn, retries = 3, timeout = 10000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await Promise.race([
-        fn(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("⏳ Timeout envoi message")), timeout)
-        ),
-      ]);
-    } catch (err) {
-      console.warn(`⚠️ Tentative ${i + 1}/${retries} échouée: ${err.message}`);
-      if (i === retries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-  }
+// =================== VARIABLES GLOBALES ===================
+let scheduledJobs = []; // tableau pour tous les jobs planifiés
+
+// =================== UTILITAIRE ===================
+function clearScheduledJobs() {
+  scheduledJobs.forEach(job => job.cancel());
+  scheduledJobs = [];
 }
 
-// =================== 2️⃣ ENVOI MESSAGE ===================
+// =================== ENVOI MESSAGE ===================
 async function sendTelegramMessage(canal, msg, canalKey) {
   const options = { parse_mode: "HTML" };
-
   try {
     switch (msg.media_type) {
       case "photo":
@@ -76,19 +66,19 @@ async function sendTelegramMessage(canal, msg, canalKey) {
   }
 }
 
-// =================== 3️⃣ RÉCUPÉRATION MESSAGES ===================
+// =================== RÉCUPÉRATION MESSAGES ===================
 async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM ${tableName}
-        WHERE day_of_week = $1
-          AND id NOT IN (
-            SELECT message_id
-            FROM messages_envoyes
-            WHERE canal = $2 AND sent_date >= CURRENT_DATE
-          )
-        ORDER BY RANDOM()
-        LIMIT 2;`,
+       WHERE day_of_week = $1
+         AND id NOT IN (
+           SELECT message_id
+           FROM messages_envoyes
+           WHERE canal = $2 AND sent_date >= CURRENT_DATE
+         )
+       ORDER BY RANDOM()
+       LIMIT 2;`,
       [dayOfWeek, canalKey]
     );
     return rows;
@@ -98,49 +88,45 @@ async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
   }
 }
 
-// =================== 4️⃣ PLANIFICATION JOURNALIÈRE ===================
+// =================== PLANIFICATION JOURNALIÈRE ===================
 async function scheduleDailyMessages(tableName, canalId, canalKey) {
-  try {
-    const today = dayjs().day();
-    const messages = await getTwoMessagesOfDay(tableName, today, canalKey);
+  // 🔹 Annule tous les jobs précédemment planifiés
+  clearScheduledJobs();
 
-    if (!messages.length) {
-      console.log(`⚠️ Aucun message disponible pour ${canalKey} aujourd’hui`);
-      return;
-    }
+  const today = dayjs().day();
+  const messages = await getTwoMessagesOfDay(tableName, today, canalKey);
 
-    const hours = [8, 20]; // matin & soir
-    const messagesToSend = messages.slice(0, 2); // sécurité supplémentaire
-
-    messagesToSend.forEach((msg, index) => {
-      const sendHour = hours[index] || 20;
-      const sendTime = dayjs().hour(sendHour).minute(0).second(0);
-
-      schedule.scheduleJob(sendTime.toDate(), async () => {
-        await retryWithTimeout(() => sendTelegramMessage(canalId, msg, canalKey));
-        console.log(`📤 ${canalKey} → message ${index + 1} prévu à ${sendTime.format("HH:mm")}`);
-      });
-    });
-  } catch (err) {
-    console.error(`💥 Erreur planification ${canalKey}:`, err.message);
+  if (!messages.length) {
+    console.log(`⚠️ Aucun message disponible pour ${canalKey} aujourd’hui`);
+    return;
   }
+
+  const hours = [8, 20]; // matin & soir
+  messages.slice(0, 2).forEach((msg, index) => {
+    const sendTime = dayjs().hour(hours[index]).minute(0).second(0);
+    const job = schedule.scheduleJob(sendTime.toDate(), async () => {
+      await retryWithTimeout(() => sendTelegramMessage(canalId, msg, canalKey));
+      console.log(`📤 ${canalKey} → message ${msg.id} envoyé à ${sendTime.format("HH:mm")}`);
+    });
+    scheduledJobs.push(job);
+  });
 }
 
-// =================== 5️⃣ REPLANIFICATION QUOTIDIENNE ===================
+// =================== REPLANIFICATION QUOTIDIENNE ===================
 schedule.scheduleJob("0 0 * * *", async () => {
   console.log("🔄 Nouvelle journée : reprogrammation des messages");
   await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
   await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
 });
 
-// =================== 6️⃣ FONCTION PRINCIPALE EXPORTABLE ===================
+// =================== FONCTION PRINCIPALE EXPORTABLE ===================
 async function startDailyCoupons() {
   console.log("🚀 Lancement dailyScheduler via startDailyCoupons...");
   await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
   await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
 }
 
-// =================== 7️⃣ HANDLERS GLOBAUX ===================
+// =================== HANDLERS GLOBAUX ===================
 process.on("unhandledRejection", async (reason) => {
   console.error("⚠️ Unhandled Rejection:", reason);
   if (ADMIN_ID)
@@ -156,15 +142,15 @@ process.on("uncaughtException", async (err) => {
     await bot.sendMessage(ADMIN_ID, `💥 uncaughtException: ${err.message}`);
 });
 
-// =================== 8️⃣ LANCEMENT INITIAL ===================
+// =================== LANCEMENT INITIAL ===================
 (async () => {
   console.log("🚀 Lancement initial des tâches journalières...");
   await startDailyCoupons();
 })();
 
-console.log("✅ dailyScheduler.js prêt (retry + restart + sécurité totale)");
+console.log("✅ dailyScheduler.js prêt (Watchdog-safe, anti-duplication)");
 
-// =================== 9️⃣ EXPORT ===================
+// =================== EXPORT ===================
 module.exports = {
   startDailyCoupons
 };
