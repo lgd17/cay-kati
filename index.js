@@ -49,45 +49,16 @@ const fixedEditStates = {};
 const editStates = {};
 
 // ============================
-// Ping automatique toutes les 14 minutes
+// Ping automatique toutes les 13 minutes
 // ============================
-// Définition du safePingIndex
-async function safePingIndex(retries = 3, delay = 2000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await ping();
-      console.log(`⏰ Ping Index réussi à ${new Date().toLocaleTimeString()}`);
-      return;
-    } catch (err) {
-      console.warn(`⚠️ Tentative ping ${i + 1} échouée: ${err.message}`);
-      if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
-      else console.error("❌ Ping Index échoué définitivement :", err.message);
-    }
+consschedule.scheduleJob("*/13 * * * *", async () => { // 🔹 Ping toutes les 13 min
+  if (!isWithinPingHours() || isPause) {
+    console.log(`🕒 Pause ping (${new Date().toLocaleTimeString()})`);
+    return;
   }
-}
-
-
-// Définir isPause local
-let isPauseIndex = false;
-
-// Début pause
-schedule.scheduleJob('30 3 * * *', () => {
-  isPauseIndex = true;
-  console.log("🕒 Pause index.js activée");
+  await safePing();
 });
 
-// Fin pause
-schedule.scheduleJob('07 5 * * *', () => {
-  isPauseIndex = false;
-  console.log("🕒 Fin de pause index.js");
-  safePingIndex(); // ping immédiat après pause
-});
-
-// Ping toutes les 13 min
-schedule.scheduleJob("*/13 * * * *", async () => {
-  if (isPauseIndex) return; // bloque ping pendant pause
-  await safePingIndex();
-});
 
 
 
