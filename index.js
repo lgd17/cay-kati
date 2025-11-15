@@ -51,8 +51,27 @@ const editStates = {};
 // ============================
 // Ping automatique toutes les 14 minutes
 // ============================
-ping(); // ping immédiat au démarrage
-setInterval(ping, 14 * 60 * 1000); // répéter toutes les 14 minutes
+// Définir isPause local
+let isPauseIndex = false;
+
+// Début pause
+schedule.scheduleJob('30 3 * * *', () => {
+  isPauseIndex = true;
+  console.log("🕒 Pause index.js activée");
+});
+
+// Fin pause
+schedule.scheduleJob('07 5 * * *', () => {
+  isPauseIndex = false;
+  console.log("🕒 Fin de pause index.js");
+  safePingIndex(); // ping immédiat après pause
+});
+
+// Ping toutes les 13 min
+schedule.scheduleJob("*/13 * * * *", async () => {
+  if (isPauseIndex) return; // bloque ping pendant pause
+  await safePingIndex();
+});
 
 
 
