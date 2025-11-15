@@ -51,6 +51,22 @@ const editStates = {};
 // ============================
 // Ping automatique toutes les 14 minutes
 // ============================
+// Définition du safePingIndex
+async function safePingIndex(retries = 3, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await ping();
+      console.log(`⏰ Ping Index réussi à ${new Date().toLocaleTimeString()}`);
+      return;
+    } catch (err) {
+      console.warn(`⚠️ Tentative ping ${i + 1} échouée: ${err.message}`);
+      if (i < retries - 1) await new Promise(r => setTimeout(r, delay));
+      else console.error("❌ Ping Index échoué définitivement :", err.message);
+    }
+  }
+}
+
+
 // Définir isPause local
 let isPauseIndex = false;
 
