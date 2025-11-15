@@ -8,6 +8,7 @@ const ADMIN_ID = process.env.ADMIN_ID;
 // =================== FLAGS ===================
 let lastPing = Date.now();
 let reloadInProgress = false;
+let isPause = false; // 🔒 Flag pause volontaire
 
 // =================== 1️⃣ Vérification plage horaire ===================
 function isWithinPingHours() {
@@ -24,6 +25,7 @@ function isWithinPingHours() {
 
 // =================== 2️⃣ Ping avec retry ===================
 async function safePing(retries = 3, delay = 2000) {
+  if (isPause) return; // 🔒 Ne ping pas pendant la pause
   for (let i = 0; i < retries; i++) {
     try {
       await ping();
@@ -38,34 +40,40 @@ async function safePing(retries = 3, delay = 2000) {
   }
 }
 
-// =================== 3️⃣ Rechargement modules ===================
-function reloadModule(modulePath) {
-  try {
-    delete require.cache[require.resolve(modulePath)];
-    return require(modulePath);
-  } catch (err) {
-    console.error(`❌ Erreur lors du rechargement de ${modulePath}:`, err.message);
-    return null;
-  }
-}
+// =================== 3️⃣ Pause volontaire ===================
+// Début pause 03:30
+schedule.scheduleJob('30 3 * * *', () => {
+  isPause = true;
+  console.log("🕒 Pause volontaire activée : ping et watchdog désactivés");
+});
 
-// Modules critiques
-let { ping } = require("./pingServer");
-let autoSend = reloadModule(path.join(__dirname, "autoSend.js"));
-let autoSender = reloadModule(path.join(__dirname, "autoSender.js"));
-let dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js"));
-let couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js"));
+// Fin pause 05:07
+schedule.scheduleJob('07 5 * * *', () => {
+  isPause = false;
+  console.log("🕒 Fin de pause : ping et watchdog réactivés");
+  safePing(); // ping immédiat après réveil
+});
 
 // =================== 4️⃣ Cron ping ===================
-schedule.scheduleJob("*/14 * * * *", async () => {
-  if (!isWithinPingHours()) {
+schedule.scheduleJob("*/13 * * * *", async () => { // 🔹 Ping toutes les 13 min
+  if (!isWithinPingHours() || isPause) {
     console.log(`🕒 Pause ping (${new Date().toLocaleTimeString()})`);
     return;
   }
   await safePing();
 });
 
-// =================== 5️⃣ Reload modules critique (sans relance des fonctions) ===================
+// =================== 5️⃣ Watchdog ===================
+setInterval(() => {
+  if (isPause) return; // 🔒 Ignore watchdog pendant pause
+  const minutesSinceLastPing = (Date.now() - lastPing) / 60000;
+  if (minutesSinceLastPing > 14) { // watchdog 14 min
+    console.warn("🚨 Watchdog détecte freeze !");
+    reloadAllModules();
+  }
+}, 14 * 60 * 1000);
+
+// =================== 6️⃣ Reload modules critique ===================
 async function reloadAllModules() {
   if (reloadInProgress) {
     console.log("🔒 Reload déjà en cours, passage...");
@@ -76,7 +84,6 @@ async function reloadAllModules() {
   console.log("🔄 Redémarrage interne des modules...");
 
   try {
-    // Reload seulement les modules critiques
     ({ ping } = reloadModule(path.join(__dirname, "pingServer.js")) || { ping });
     autoSend = reloadModule(path.join(__dirname, "autoSend.js")) || autoSend;
     autoSender = reloadModule(path.join(__dirname, "autoSender.js")) || autoSender;
@@ -92,34 +99,11 @@ async function reloadAllModules() {
   }
 }
 
-// =================== 6️⃣ Redémarrage interne quotidien ===================
-schedule.scheduleJob("00 2 * * *", async () => {
-  await reloadAllModules();
-});
-
-// =================== 7️⃣ Envoi Admin ===================
-async function safeSendAdmin(msg) {
-  try {
-    if (ADMIN_ID && bot) await bot.sendMessage(ADMIN_ID, msg);
-  } catch (err) {
-    console.error("❌ Impossible d'envoyer message Admin:", err.message);
-  }
-}
-
-// =================== 8️⃣ Watchdog (auto-détection freeze) ===================
-setInterval(() => {
-  const minutesSinceLastPing = (Date.now() - lastPing) / 60000;
-  if (minutesSinceLastPing > 60) { // plus d'1h sans ping
-    console.warn("🚨 Watchdog détecte freeze !");
-    reloadAllModules(); // reload sécurisé grâce au flag
-  }
-}, 15 * 60 * 1000); // toutes les 15 minutes
-
-// =================== 9️⃣ Ping immédiat au démarrage ===================
-if (isWithinPingHours()) {
+// =================== 7️⃣ Ping immédiat au démarrage ===================
+if (isWithinPingHours() && !isPause) {
   safePing().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
 }
 
-console.log("✅ pingCron.js lancé : ping interne + restart quotidien actif");
+console.log("✅ pingCron.js lancé : ping interne + watchdog + pause volontaire actif");
 
 module.exports = { reloadAllModules, safePing };
