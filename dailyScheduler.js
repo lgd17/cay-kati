@@ -17,10 +17,23 @@ const ADMIN_ID = process.env.ADMIN_ID;
 // =================== VARIABLES GLOBALES ===================
 let scheduledJobs = []; // tableau pour tous les jobs planifiés
 
-// =================== UTILITAIRE ===================
+// =================== NETTOYAGE JOBS ===================
 function clearScheduledJobs() {
   scheduledJobs.forEach(job => job.cancel());
   scheduledJobs = [];
+}
+
+// =================== RETRY SÉCURISÉ (remplace retryWithTimeout) ===================
+async function safeRetry(fn, retries = 3, delay = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.error(`⏳ Retry ${i + 1}/${retries}:`, err.message);
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
 }
 
 // =================== ENVOI MESSAGE ===================
@@ -55,7 +68,7 @@ async function sendTelegramMessage(canal, msg, canalKey) {
       [msg.id, canalKey]
     );
 
-    console.log(`✅ ${canalKey} → message ${msg.id} envoyé (${msg.media_type || "texte"})`);
+    console.log(`✅ ${canalKey} → message ${msg.id} envoyé`);
   } catch (err) {
     console.error(`❌ Erreur envoi ${canalKey}:`, err.message);
     if (ADMIN_ID)
@@ -75,7 +88,7 @@ async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
          AND id NOT IN (
            SELECT message_id
            FROM messages_envoyes
-           WHERE canal = $2 AND sent_date >= CURRENT_DATE
+           WHERE canal = $2 AND sent_date = CURRENT_DATE
          )
        ORDER BY RANDOM()
        LIMIT 2;`,
@@ -90,8 +103,7 @@ async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
 
 // =================== PLANIFICATION JOURNALIÈRE ===================
 async function scheduleDailyMessages(tableName, canalId, canalKey) {
-  // 🔹 Annule tous les jobs précédemment planifiés
-  clearScheduledJobs();
+  clearScheduledJobs(); // 🔥 Anti-duplication (important pour watchdog)
 
   const today = dayjs().day();
   const messages = await getTwoMessagesOfDay(tableName, today, canalKey);
@@ -101,13 +113,22 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
     return;
   }
 
-  const hours = [8, 20]; // matin & soir
+  const hours = [8, 20];
+
   messages.slice(0, 2).forEach((msg, index) => {
     const sendTime = dayjs().hour(hours[index]).minute(0).second(0);
+
     const job = schedule.scheduleJob(sendTime.toDate(), async () => {
-      await retryWithTimeout(() => sendTelegramMessage(canalId, msg, canalKey));
-      console.log(`📤 ${canalKey} → message ${msg.id} envoyé à ${sendTime.format("HH:mm")}`);
+      try {
+        await safeRetry(() =>
+          sendTelegramMessage(canalId, msg, canalKey)
+        );
+        console.log(`📤 ${canalKey} → message ${msg.id} envoyé (${hours[index]}h)`);
+      } catch (err) {
+        console.error("❌ Erreur envoi final:", err.message);
+      }
     });
+
     scheduledJobs.push(job);
   });
 }
@@ -115,42 +136,30 @@ async function scheduleDailyMessages(tableName, canalId, canalKey) {
 // =================== REPLANIFICATION QUOTIDIENNE ===================
 schedule.scheduleJob("0 0 * * *", async () => {
   console.log("🔄 Nouvelle journée : reprogrammation des messages");
-  await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
-  await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
+  await startDailyCoupons();
 });
 
-// =================== FONCTION PRINCIPALE EXPORTABLE ===================
+// =================== FONCTION PRINCIPALE ===================
 async function startDailyCoupons() {
-  console.log("🚀 Lancement dailyScheduler via startDailyCoupons...");
   await scheduleDailyMessages("messages_canal1", CANAL1_ID, "Canal 1");
   await scheduleDailyMessages("messages_canal2", CANAL2_ID, "Canal 2");
 }
 
-// =================== HANDLERS GLOBAUX ===================
-process.on("unhandledRejection", async (reason) => {
-  console.error("⚠️ Unhandled Rejection:", reason);
-  if (ADMIN_ID)
-    await bot.sendMessage(
-      ADMIN_ID,
-      `⚠️ unhandledRejection: ${reason.message || reason}`
-    );
+// =================== HANDLERS GLOBAL ===================
+process.on("unhandledRejection", err => {
+  console.error("⚠️ Unhandled Rejection:", err.message || err);
 });
 
-process.on("uncaughtException", async (err) => {
-  console.error("💥 Uncaught Exception:", err);
-  if (ADMIN_ID)
-    await bot.sendMessage(ADMIN_ID, `💥 uncaughtException: ${err.message}`);
+process.on("uncaughtException", err => {
+  console.error("💥 Uncaught Exception:", err.message);
 });
 
-// =================== LANCEMENT INITIAL ===================
+// =================== LANCEMENT ===================
 (async () => {
-  console.log("🚀 Lancement initial des tâches journalières...");
   await startDailyCoupons();
 })();
 
-console.log("✅ dailyScheduler.js prêt (Watchdog-safe, anti-duplication)");
+console.log("✅ dailyScheduler.js chargé");
 
 // =================== EXPORT ===================
-module.exports = {
-  startDailyCoupons
-};
+module.exports = { startDailyCoupons };
