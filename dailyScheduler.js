@@ -15,15 +15,16 @@ const CANAL2_ID = process.env.CANAL2_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
 // =================== VARIABLES GLOBALES ===================
-let scheduledJobs = []; // tableau pour tous les jobs planifiés
+let scheduledJobs = [];
 
 // =================== NETTOYAGE JOBS ===================
 function clearScheduledJobs() {
-  scheduledJobs.forEach(job => job.cancel());
+  scheduledJobs.forEach(job => job?.cancel?.());
   scheduledJobs = [];
+  console.log("♻️ Tous les anciens jobs ont été annulés.");
 }
 
-// =================== RETRY SÉCURISÉ (remplace retryWithTimeout) ===================
+// =================== RETRY SÉCURISÉ ===================
 async function safeRetry(fn, retries = 3, delay = 1500) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -33,6 +34,38 @@ async function safeRetry(fn, retries = 3, delay = 1500) {
       if (i === retries - 1) throw err;
       await new Promise(r => setTimeout(r, delay));
     }
+  }
+}
+
+// =================== LOCK JOBS ===================
+async function acquireJobLock(jobName) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM job_locks WHERE job_name = $1`,
+      [jobName]
+    );
+
+    if (rows.length > 0) return false; // déjà locké
+
+    await pool.query(
+      `INSERT INTO job_locks (job_name) VALUES ($1)`,
+      [jobName]
+    );
+    return true;
+  } catch (err) {
+    console.error("❌ Erreur acquireJobLock :", err.message);
+    return false;
+  }
+}
+
+async function releaseJobLock(jobName) {
+  try {
+    await pool.query(
+      `DELETE FROM job_locks WHERE job_name = $1`,
+      [jobName]
+    );
+  } catch (err) {
+    console.error("❌ Erreur releaseJobLock :", err.message);
   }
 }
 
@@ -103,34 +136,40 @@ async function getTwoMessagesOfDay(tableName, dayOfWeek, canalKey) {
 
 // =================== PLANIFICATION JOURNALIÈRE ===================
 async function scheduleDailyMessages(tableName, canalId, canalKey) {
-  clearScheduledJobs(); // 🔥 Anti-duplication (important pour watchdog)
-
-  const today = dayjs().day();
-  const messages = await getTwoMessagesOfDay(tableName, today, canalKey);
-
-  if (!messages.length) {
-    console.log(`⚠️ Aucun message disponible pour ${canalKey} aujourd’hui`);
+  const lockAcquired = await acquireJobLock(canalKey);
+  if (!lockAcquired) {
+    console.log(`⏳ Job ${canalKey} déjà en cours, passage...`);
     return;
   }
 
-  const hours = [8, 20];
+  try {
+    clearScheduledJobs();
 
-  messages.slice(0, 2).forEach((msg, index) => {
-    const sendTime = dayjs().hour(hours[index]).minute(0).second(0);
+    const today = dayjs().day();
+    const messages = await getTwoMessagesOfDay(tableName, today, canalKey);
+    if (!messages.length) {
+      console.log(`⚠️ Aucun message pour ${canalKey} aujourd’hui`);
+      return;
+    }
 
-    const job = schedule.scheduleJob(sendTime.toDate(), async () => {
-      try {
-        await safeRetry(() =>
-          sendTelegramMessage(canalId, msg, canalKey)
-        );
-        console.log(`📤 ${canalKey} → message ${msg.id} envoyé (${hours[index]}h)`);
-      } catch (err) {
-        console.error("❌ Erreur envoi final:", err.message);
-      }
+    const hours = [8, 20];
+    messages.slice(0, 2).forEach((msg, i) => {
+      const sendTime = dayjs().hour(hours[i]).minute(0).second(0);
+
+      const job = schedule.scheduleJob(sendTime.toDate(), async () => {
+        try {
+          await safeRetry(() => sendTelegramMessage(canalId, msg, canalKey));
+          console.log(`📤 ${canalKey} → message ${msg.id} envoyé (${hours[i]}h)`);
+        } catch (err) {
+          console.error("❌ Erreur envoi final:", err.message);
+        }
+      });
+
+      scheduledJobs.push(job);
     });
-
-    scheduledJobs.push(job);
-  });
+  } finally {
+    await releaseJobLock(canalKey);
+  }
 }
 
 // =================== REPLANIFICATION QUOTIDIENNE ===================
@@ -159,7 +198,7 @@ process.on("uncaughtException", err => {
   await startDailyCoupons();
 })();
 
-console.log("✅ dailyScheduler.js chargé");
+console.log("✅ dailyScheduler.js chargé et sécurisé");
 
 // =================== EXPORT ===================
 module.exports = { startDailyCoupons };
