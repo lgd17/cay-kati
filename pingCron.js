@@ -117,4 +117,4 @@ if (isWithinPingHours() && !isPause) {
 
 console.log("✅ pingCron.js lancé : ping interne + watchdog + pause volontaire actif");
 
-module.exports = { reloadAllModules, startPingCron, safePing };
+module.exports = { safePing, reloadAllModules, startPingCron };
