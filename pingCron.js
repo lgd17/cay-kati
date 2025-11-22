@@ -1,4 +1,4 @@
-const path = require("path");
+
 const schedule = require("node-schedule");
 const moment = require("moment-timezone");
 const { ping } = require("./pingServer");
@@ -10,6 +10,9 @@ const ADMIN_ID = process.env.ADMIN_ID;
 let lastPing = Date.now();
 let reloadInProgress = false;
 let isPause = false; // 🔒 Flag pause volontaire
+let cronInitialized = false; // ✅ Evite plusieurs cron si importé plusieurs fois
+
+
 
 // =================== 1️⃣ Vérification plage horaire ===================
 function isWithinPingHours() {
@@ -23,6 +26,11 @@ function isWithinPingHours() {
 
   return inMorning || inNight;
 }
+
+// ✅ Lancement cron ping interne + watchdog
+function startPingCron() {
+  if (cronInitialized) return; // Evite doublons
+  cronInitialized = true;
 
 // =================== 2️⃣ Ping avec retry ===================
 async function safePing(retries = 3, delay = 2000) {
@@ -73,8 +81,9 @@ setInterval(() => {
     reloadAllModules();
   }
 }, 14 * 60 * 1000);
-
-// =================== 6️⃣ Reload modules critique ===================
+  
+  // =================== 6️⃣ Reload modules critique ===================
+  
 async function reloadAllModules() {
   if (reloadInProgress) {
     console.log("🔒 Reload déjà en cours, passage...");
@@ -85,11 +94,11 @@ async function reloadAllModules() {
   console.log("🔄 Redémarrage interne des modules...");
 
   try {
-    ({ ping } = reloadModule(path.join(__dirname, "pingServer.js")) || { ping });
-    autoSend = reloadModule(path.join(__dirname, "autoSend.js")) || autoSend;
-    autoSender = reloadModule(path.join(__dirname, "autoSender.js")) || autoSender;
-    dailyScheduler = reloadModule(path.join(__dirname, "dailyScheduler.js")) || dailyScheduler;
-    couponScheduler = reloadModule(path.join(__dirname, "couponScheduler.js")) || couponScheduler;
+    ({ ping } = reloadModule(require.resolve("./pingServer.js")) || { ping });
+    autoSend = reloadModule(require.resolve("./autoSend.js")) || autoSend;
+    autoSender = reloadModule(require.resolve("./autoSender.js")) || autoSender;
+    dailyScheduler = reloadModule(require.resolve("./dailyScheduler.js")) || dailyScheduler;
+    couponScheduler = reloadModule(require.resolve("./couponScheduler.js")) || couponScheduler;
 
     console.log("✅ Modules rechargés (fonctions non relancées) !");
   } catch (err) {
@@ -100,6 +109,7 @@ async function reloadAllModules() {
   }
 }
 
+
 // =================== 7️⃣ Ping immédiat au démarrage ===================
 if (isWithinPingHours() && !isPause) {
   safePing().catch(err => console.error("❌ Erreur ping immédiat Bot2 :", err.message));
@@ -107,4 +117,4 @@ if (isWithinPingHours() && !isPause) {
 
 console.log("✅ pingCron.js lancé : ping interne + watchdog + pause volontaire actif");
 
-module.exports = { reloadAllModules, safePing };
+module.exports = { reloadAllModules, startPingCron, safePing };
