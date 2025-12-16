@@ -15,7 +15,11 @@ const CANAL2_ID = process.env.CANAL2_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
 // =================== VARIABLES GLOBALES ===================
-let scheduledJobs = [];
+let scheduledJobs = {
+  canal1: [],
+  canal2: []
+};
+
 
 // =================== NETTOYAGE JOBS ===================
 function clearScheduledJobs() {
